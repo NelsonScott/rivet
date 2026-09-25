@@ -156,6 +156,13 @@ def _cluster_payload(key: str, members: list[dict]) -> dict:
 # ------------------------------------------------------------------ providers
 
 
+# `--tools ""` does not stop @-mention attachments: "@/abs/path" or "@~/path" in the
+# prompt makes the CLI read that file into context (verified 2026-09-25). A zero-width
+# space after each "@" keeps the text readable but no longer a mention.
+def neutralize_mentions(text: str) -> str:
+    return text.replace("@", "@\u200b")
+
+
 def _ask_claude_cli(payload: list[dict]) -> str:
     """Ask the Claude Code CLI. Returns the assistant's text.
 
@@ -168,7 +175,7 @@ def _ask_claude_cli(payload: list[dict]) -> str:
         # Log/package text is partly third-party; triage needs no tools, so allow none.
         [claude_bin(), "-p", "--model", "sonnet", "--output-format", "json", "--no-session-persistence",
          "--tools", "", "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands"],
-        input=prompt,
+        input=neutralize_mentions(prompt),
         capture_output=True,
         text=True,
         timeout=CLAUDE_TIMEOUT,
