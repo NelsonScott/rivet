@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -164,11 +165,14 @@ def _ask_claude_cli(payload: list[dict]) -> str:
     """
     prompt = SYSTEM_PROMPT + "\n\nCLUSTERS:\n" + json.dumps({"clusters": payload})
     cp = subprocess.run(
-        [claude_bin(), "-p", "--model", "sonnet", "--output-format", "json", "--no-session-persistence"],
+        # Log/package text is partly third-party; triage needs no tools, so allow none.
+        [claude_bin(), "-p", "--model", "sonnet", "--output-format", "json", "--no-session-persistence",
+         "--tools", "", "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands"],
         input=prompt,
         capture_output=True,
         text=True,
         timeout=CLAUDE_TIMEOUT,
+        cwd=tempfile.gettempdir(),
     )
     raw = (cp.stdout or "").strip()
     if not raw:
