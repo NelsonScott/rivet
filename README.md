@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/NelsonScott/rivet/actions/workflows/ci.yml/badge.svg)](https://github.com/NelsonScott/rivet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/NelsonScott/rivet)](https://github.com/NelsonScott/rivet/releases/latest)
-[![COPR build](https://copr.fedorainfracloud.org/coprs/scottnelson/rivet-updater/package/rivet-updater/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/scottnelson/rivet-updater/)
+[![COPR build](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fcopr.fedorainfracloud.org%2Fapi_3%2Fpackage%3Fownername%3Dscottnelson%26projectname%3Drivet-updater%26packagename%3Drivet-updater%26with_latest_build%3DTrue&query=%24.builds.latest.state&label=copr&color=blue)](https://copr.fedorainfracloud.org/coprs/scottnelson/rivet-updater/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <img src="docs/screenshot.png" width="840" alt="Rivet listing pending updates: openssl marked security, the kernel and NVIDIA driver marked reboot and rebuild, Flatpak runtimes blocked while Steam runs">
