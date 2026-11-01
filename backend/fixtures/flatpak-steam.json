@@ -1,0 +1,321 @@
+{
+  "_comment": "QA fixture: real dnf/fwupd rows + synthetic Flatpak updates. Use with `rivet-collect --fixture`. Does not touch the system.",
+  "steam_running": true,
+  "dnf": [
+    {
+      "id": "dnf:akmod-nvidia",
+      "source": "dnf",
+      "name": "akmod-nvidia",
+      "display_name": "akmod-nvidia",
+      "from": "3:610.57.04-1.fc44",
+      "to": "3:615.71.09-3.fc44",
+      "size_bytes": 46101,
+      "ref": "akmod-nvidia-615.71.09-3.fc44.x86_64",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_repo": "rpmfusion-nonfree-updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:bluez",
+      "source": "dnf",
+      "name": "bluez",
+      "display_name": "bluez",
+      "from": "5.87-6.fc44",
+      "to": "5.87+1.git8750129efca8-1.fc44",
+      "size_bytes": 1560449,
+      "ref": "bluez-5.87+1.git8750129efca8-1.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-d4156b5fc5",
+        "type": "security",
+        "severity": null
+      },
+      "notes_excerpt": "This update fixes a number of security issues.",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-d4156b5fc5",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:curl",
+      "source": "dnf",
+      "name": "curl",
+      "display_name": "curl",
+      "from": "8.18.0-9.fc44",
+      "to": "8.18.0-10.fc44",
+      "size_bytes": 245961,
+      "ref": "curl-8.18.0-10.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-f26b509a1a",
+        "type": "security",
+        "severity": "important"
+      },
+      "notes_excerpt": "- Fix HTTP/2 stream-dependency tree UAF (CVE-2026-10536)\n- Fix Native CA trust persist (CVE-2026-11564)\n- Fix stale proxy password leak (CVE-2026-9079)\n- Fix wrong reuse for different services (CVE-2026-8458)",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-f26b509a1a",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:gnome-software",
+      "source": "dnf",
+      "name": "gnome-software",
+      "display_name": "gnome-software",
+      "from": "50.3-1.fc44",
+      "to": "50.4-1.fc44",
+      "size_bytes": 2772958,
+      "ref": "gnome-software-50.4-1.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-ce92890597",
+        "type": "bugfix",
+        "severity": null
+      },
+      "notes_excerpt": "Update to 50.4\n\nThis is a stable release with the following change:\n\n* Speed up Software Repositories dialog on non-Fedora package based systems",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-ce92890597",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:gstreamer1",
+      "source": "dnf",
+      "name": "gstreamer1",
+      "display_name": "gstreamer1",
+      "from": "1.28.6-1.fc44",
+      "to": "1.28.7-1.fc44",
+      "size_bytes": 1782702,
+      "ref": "gstreamer1-1.28.7-1.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-d6fe95e2a7",
+        "type": "bugfix",
+        "severity": "low"
+      },
+      "notes_excerpt": "1.28.7",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-d6fe95e2a7",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:kernel",
+      "source": "dnf",
+      "name": "kernel",
+      "display_name": "kernel",
+      "from": "7.2.4-200.fc44",
+      "to": "7.2.5-200.fc44",
+      "size_bytes": 245425,
+      "ref": "kernel-7.2.5-200.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-9ce2715225",
+        "type": "security",
+        "severity": "moderate"
+      },
+      "notes_excerpt": "The 7.2.5 stable kernel update contains a number of important fixes across the tree.",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-9ce2715225",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:kernel-core",
+      "source": "dnf",
+      "name": "kernel-core",
+      "display_name": "kernel-core",
+      "from": "7.2.4-200.fc44",
+      "to": "7.2.5-200.fc44",
+      "size_bytes": 21897109,
+      "ref": "kernel-core-7.2.5-200.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-9ce2715225",
+        "type": "security",
+        "severity": "moderate"
+      },
+      "notes_excerpt": "The 7.2.5 stable kernel update contains a number of important fixes across the tree.",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-9ce2715225",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:kernel-modules",
+      "source": "dnf",
+      "name": "kernel-modules",
+      "display_name": "kernel-modules",
+      "from": "7.2.4-200.fc44",
+      "to": "7.2.5-200.fc44",
+      "size_bytes": 107576417,
+      "ref": "kernel-modules-7.2.5-200.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-9ce2715225",
+        "type": "security",
+        "severity": "moderate"
+      },
+      "notes_excerpt": "The 7.2.5 stable kernel update contains a number of important fixes across the tree.",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-9ce2715225",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:PackageKit",
+      "source": "dnf",
+      "name": "PackageKit",
+      "display_name": "PackageKit",
+      "from": "1.3.6-1.fc44",
+      "to": "1.4.0-1.fc44",
+      "size_bytes": 842853,
+      "ref": "PackageKit-1.4.0-1.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-6cf9691266",
+        "type": "security",
+        "severity": "important"
+      },
+      "notes_excerpt": "Update to 1.4.0 to fix CVE-2026-19816, GHSA-pwvr-2q5v-xvw4, GHSA-6759-8c43-4xrv, GHSA-6695-qjj5-533m, GHSA-gmhf-fxfx-m2w9",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-6cf9691266",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:rest",
+      "source": "dnf",
+      "name": "rest",
+      "display_name": "rest",
+      "from": "0.10.2-5.fc44",
+      "to": "0.10.2-9.fc44",
+      "size_bytes": 73176,
+      "ref": "rest-0.10.2-9.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-df38653cf2",
+        "type": "security",
+        "severity": "important"
+      },
+      "notes_excerpt": "Fix for https://access.redhat.com/security/cve/cve-2026-16615",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-df38653cf2",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:vim-common",
+      "source": "dnf",
+      "name": "vim-common",
+      "display_name": "vim-common",
+      "from": "2:9.2.967-1.fc44",
+      "to": "2:9.2.1061-1.fc44",
+      "size_bytes": 8848744,
+      "ref": "vim-common-9.2.1061-1.fc44.x86_64",
+      "advisory": {
+        "id": "FEDORA-2026-81db14bf81",
+        "type": "enhancement",
+        "severity": null
+      },
+      "notes_excerpt": "The newest upstream commit",
+      "notes_url": "https://bodhi.fedoraproject.org/updates/FEDORA-2026-81db14bf81",
+      "_repo": "updates",
+      "_arch": "x86_64"
+    },
+    {
+      "id": "dnf:xorg-x11-drv-nvidia",
+      "source": "dnf",
+      "name": "xorg-x11-drv-nvidia",
+      "display_name": "xorg-x11-drv-nvidia",
+      "from": "3:610.57.04-1.fc44",
+      "to": "3:615.71.09-3.fc44",
+      "size_bytes": 139896775,
+      "ref": "xorg-x11-drv-nvidia-615.71.09-3.fc44.x86_64",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_repo": "rpmfusion-nonfree-updates",
+      "_arch": "x86_64"
+    }
+  ],
+  "flatpak": [
+    {
+      "id": "flatpak:runtime/org.freedesktop.Platform/x86_64/25.08",
+      "source": "flatpak",
+      "name": "org.freedesktop.Platform",
+      "display_name": "Freedesktop Platform",
+      "from": "freedesktop-sdk-25.08.17",
+      "to": "freedesktop-sdk-25.08.18",
+      "size_bytes": 259300000,
+      "ref": "runtime/org.freedesktop.Platform/x86_64/25.08",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_scope": "system",
+      "_origin": "flathub"
+    },
+    {
+      "id": "flatpak:runtime/org.freedesktop.Platform.GL.default/x86_64/25.08",
+      "source": "flatpak",
+      "name": "org.freedesktop.Platform.GL.default",
+      "display_name": "Mesa",
+      "from": "25.2.3",
+      "to": "25.2.4",
+      "size_bytes": 181400000,
+      "ref": "runtime/org.freedesktop.Platform.GL.default/x86_64/25.08",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_scope": "system",
+      "_origin": "flathub"
+    },
+    {
+      "id": "flatpak:runtime/org.freedesktop.Platform.GL32.default/x86_64/25.08",
+      "source": "flatpak",
+      "name": "org.freedesktop.Platform.GL32.default",
+      "display_name": "Mesa 32-bit",
+      "from": "25.2.3",
+      "to": "25.2.4",
+      "size_bytes": 190100000,
+      "ref": "runtime/org.freedesktop.Platform.GL32.default/x86_64/25.08",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_scope": "system",
+      "_origin": "flathub"
+    },
+    {
+      "id": "flatpak:runtime/org.gnome.Platform/x86_64/50",
+      "source": "flatpak",
+      "name": "org.gnome.Platform",
+      "display_name": "GNOME Platform",
+      "from": "50.3",
+      "to": "50.4",
+      "size_bytes": 312700000,
+      "ref": "runtime/org.gnome.Platform/x86_64/50",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_scope": "system",
+      "_origin": "flathub"
+    },
+    {
+      "id": "flatpak:app/md.obsidian.Obsidian/x86_64/stable",
+      "source": "flatpak",
+      "name": "md.obsidian.Obsidian",
+      "display_name": "Obsidian",
+      "from": "1.9.14",
+      "to": "1.9.15",
+      "size_bytes": 118400000,
+      "ref": "app/md.obsidian.Obsidian/x86_64/stable",
+      "advisory": null,
+      "notes_excerpt": "",
+      "notes_url": null,
+      "_scope": "system",
+      "_origin": "flathub"
+    }
+  ],
+  "fwupd": [
+    {
+      "id": "fwupd:362301da643102b9f38477387e2193e57abaa590",
+      "source": "fwupd",
+      "name": "UEFI dbx",
+      "display_name": "Secure Boot dbx",
+      "from": "20260402",
+      "to": "20260707",
+      "size_bytes": 17256,
+      "ref": "362301da643102b9f38477387e2193e57abaa590",
+      "advisory": null,
+      "notes_excerpt": "This updates the list of forbidden signatures (the \"dbx\") to the latest release signed by the Microsoft 2023 KEK.\n\nSome insecure bootloaders were added, due to security vulnerabilities that allowed an attacker to bypass UEFI Secure Boot. The additional entries were from:\n- New Horizon Datasys Inc\n- EAZ Solution Inc",
+      "notes_url": "https://uefi.org/revocationlistfile",
+      "_needs_reboot": true,
+      "_vendor": "Microsoft",
+      "_plugin": "uefi_dbx"
+    }
+  ]
+}

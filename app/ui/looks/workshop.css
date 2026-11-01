@@ -1,0 +1,46 @@
+/* Look: Workshop. Warm greys like a bench under a lamp, oxblood for action, amber for
+   links and highlights. IBM Plex Sans + Plex Mono, medium corners, layered surfaces. */
+:root[data-look="workshop"]{
+  --font:'IBM Plex Sans','Inter','Adwaita Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --r-window:10px; --r-card:8px; --r-btn:6px; --r-badge:4px;
+}
+:root[data-look="workshop"][data-theme="dark"]{
+  --chrome:#1c1a18; --bg:#252220; --card:#2f2b28; --desk:#151311;
+  --fg:#f2ebe3; --fg-2:#ddd3c8; --fg-3:#cbbfb2; --fg-4:#b4a799;
+  --line:#35302c; --card-line:#413b36; --card-shadow:none; --row-line:#3c3632; --row-hover:rgba(242,235,227,.03);
+  --btn-line:#5a524b; --btn-bg:transparent; --btn-hover:rgba(242,235,227,.06);
+  --field:#252220; --check-line:#8c8076;
+  --yellow:#e9c46a; --yellow-bg:rgba(233,196,106,.14); --yellow-line:rgba(233,196,106,.38);
+  --yellow-banner:rgba(233,196,106,.07); --yellow-banner-line:rgba(233,196,106,.24);
+  --red:#f0806a; --red-text:#f59b87; --red-solid:#b23a26; --on-red-solid:#ffffff;
+  --red-bg:rgba(178,58,38,.24); --red-line:rgba(240,128,106,.45); --danger-line:rgba(240,128,106,.45);
+  --red-banner:rgba(178,58,38,.12); --red-banner-line:rgba(240,128,106,.28);
+  --green:#b9cf8e; --green-dot:#9cb86e; --green-bg:rgba(156,184,110,.15); --ok-solid:#6d8a3e;
+  --accent:#a33a47; --accent-2:#e8a33d; --grad:#a33a47; --on-accent:#fff6ee; --primary-shadow:0 2px 10px rgba(120,30,40,.35);
+  --accent-bg:rgba(232,163,61,.12); --accent-text:#efb25a;
+  --log-bg:#171513; --log-fg:#e6ddd2;
+  --skel-a:rgba(242,235,227,.06); --skel-b:rgba(242,235,227,.12);
+  --backdrop:rgba(10,8,6,.6); --window-ring:rgba(242,235,227,.08);
+}
+:root[data-look="workshop"][data-theme="light"]{
+  --chrome:#e8e2d9; --bg:#f2eee8; --card:#fbf9f6; --desk:#cfc6ba;
+  --fg:#24201c; --fg-2:#3e3730; --fg-3:#4c443c; --fg-4:#62584e;
+  --line:#ddd5ca; --card-line:#ddd5ca; --card-shadow:0 1px 3px rgba(60,40,20,.06); --row-line:#ebe5dc; --row-hover:rgba(60,40,20,.025);
+  --btn-line:#cfc5b8; --btn-bg:#fbf9f6; --btn-hover:rgba(60,40,20,.05);
+  --field:#f2eee8; --check-line:#9a8e80;
+  --yellow:#7a4e00; --yellow-bg:rgba(232,163,61,.2); --yellow-line:rgba(122,78,0,.3);
+  --yellow-banner:rgba(232,163,61,.11); --yellow-banner-line:rgba(135,87,0,.22);
+  --red:#a12f1d; --red-text:#a12f1d; --red-solid:#b23a26; --on-red-solid:#ffffff;
+  --red-bg:rgba(178,58,38,.1); --red-line:rgba(171,53,34,.32); --danger-line:rgba(171,53,34,.4);
+  --red-banner:rgba(178,58,38,.06); --red-banner-line:rgba(171,53,34,.2);
+  --green:#435d1f; --green-dot:#7c9a4b; --green-bg:rgba(124,154,75,.17); --ok-solid:#5c7a30;
+  --accent:#7e2833; --accent-2:#c98a2b; --grad:#7e2833; --on-accent:#ffffff; --primary-shadow:0 2px 8px rgba(126,40,51,.25);
+  --accent-bg:rgba(126,40,51,.08); --accent-text:#7e2833;
+  --log-bg:#24201c; --log-fg:#ece4d9;
+  --skel-a:rgba(60,40,20,.06); --skel-b:rgba(60,40,20,.12);
+  --backdrop:rgba(36,32,28,.45); --window-ring:rgba(36,32,28,.25);
+}
+:root[data-look="workshop"] .group-title{color:var(--accent-text);letter-spacing:.12em}
+:root[data-look="workshop"] .ew-row .src{font-family:var(--mono);font-size:10.5px}
+:root[data-look="workshop"] .brand-name{letter-spacing:-.01em;font-weight:700}

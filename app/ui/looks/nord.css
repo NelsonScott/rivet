@@ -1,0 +1,45 @@
+/* Look: Nord. Polar Night / Snow Storm with Frost blue, three quiet surface layers:
+   the edge (header + status strip) one shade, the list ground another, cards a third.
+   Fira Sans (humanist) + Fira Mono. Token names are style.css's; see looks/README.md. */
+:root[data-look="nord"]{
+  --font:'Fira Sans','Inter','Adwaita Sans',system-ui,sans-serif;
+  --mono:'Fira Mono',ui-monospace,'IBM Plex Mono',monospace;
+  --r-window:12px; --r-card:10px; --r-btn:8px; --r-badge:5px;
+}
+:root[data-look="nord"][data-theme="dark"]{
+  --chrome:#262b35; --bg:#2e3440; --card:#3b4252; --desk:#20242c;
+  --fg:#eceff4; --fg-2:#d8dee9; --fg-3:#c5ccda; --fg-4:#aab3c5;
+  --line:#3b4252; --card-line:#434c5e; --card-shadow:none; --row-line:#434c5e; --row-hover:rgba(236,239,244,.035);
+  --btn-line:#4c566a; --btn-bg:transparent; --btn-hover:rgba(236,239,244,.06);
+  --field:#2e3440; --check-line:#7b869b;
+  --yellow:#ebcb8b; --yellow-bg:rgba(235,203,139,.14); --yellow-line:rgba(235,203,139,.38);
+  --yellow-banner:rgba(235,203,139,.08); --yellow-banner-line:rgba(235,203,139,.24);
+  --red:#e0868f; --red-text:#f2b3b9; --red-solid:#b4545e; --on-red-solid:#ffffff;
+  --red-bg:rgba(191,97,106,.16); --red-line:rgba(224,134,143,.45); --danger-line:rgba(224,134,143,.45);
+  --red-banner:rgba(191,97,106,.12); --red-banner-line:rgba(191,97,106,.32);
+  --green:#bcd6a5; --green-dot:#a3be8c; --green-bg:rgba(163,190,140,.14); --ok-solid:#6f9b5a;
+  --accent:#88c0d0; --accent-2:#81a1c1; --grad:#88c0d0; --on-accent:#242933; --primary-shadow:none;
+  --accent-bg:rgba(136,192,208,.14); --accent-text:#8fc7d6;
+  --log-bg:#242933; --log-fg:#d8dee9;
+  --skel-a:rgba(236,239,244,.06); --skel-b:rgba(236,239,244,.12);
+  --backdrop:rgba(20,23,29,.6); --window-ring:rgba(236,239,244,.08);
+}
+:root[data-look="nord"][data-theme="light"]{
+  --chrome:#e5e9f0; --bg:#eceff4; --card:#f9fafc; --desk:#d8dee9;
+  --fg:#2e3440; --fg-2:#3b4252; --fg-3:#434c5e; --fg-4:#566074;
+  --line:#d8dee9; --card-line:#d8dee9; --card-shadow:0 1px 2px rgba(46,52,64,.05); --row-line:#e5e9f0; --row-hover:rgba(46,52,64,.025);
+  --btn-line:#c3cbd9; --btn-bg:#f9fafc; --btn-hover:rgba(46,52,64,.05);
+  --field:#eceff4; --check-line:#8e99ad;
+  --yellow:#835800; --yellow-bg:rgba(235,203,139,.32); --yellow-line:rgba(131,88,0,.3);
+  --yellow-banner:rgba(235,203,139,.18); --yellow-banner-line:rgba(131,88,0,.22);
+  --red:#a33a44; --red-text:#a33a44; --red-solid:#a8434d; --on-red-solid:#ffffff;
+  --red-bg:rgba(191,97,106,.12); --red-line:rgba(163,58,68,.32); --danger-line:rgba(163,58,68,.4);
+  --red-banner:rgba(191,97,106,.07); --red-banner-line:rgba(163,58,68,.2);
+  --green:#46652f; --green-dot:#7fa067; --green-bg:rgba(163,190,140,.26); --ok-solid:#5f8a4a;
+  --accent:#4c6e9a; --accent-2:#5e81ac; --grad:#4c6e9a; --on-accent:#ffffff; --primary-shadow:none;
+  --accent-bg:rgba(94,129,172,.12); --accent-text:#3f6190;
+  --log-bg:#2e3440; --log-fg:#d8dee9;
+  --skel-a:rgba(46,52,64,.06); --skel-b:rgba(46,52,64,.12);
+  --backdrop:rgba(46,52,64,.4); --window-ring:rgba(46,52,64,.25);
+}
+:root[data-look="nord"] .group-title{letter-spacing:.1em}

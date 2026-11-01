@@ -1,0 +1,61 @@
+/* Look: Terminal. Near-black (or paper white), one indigo, monospace for every bit of
+   metadata, tighter rows. Inter (bundled) for names + JetBrains Mono. */
+:root[data-look="terminal"]{
+  --font:'Inter','Adwaita Sans',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'IBM Plex Mono',monospace;
+  --r-window:6px; --r-card:6px; --r-btn:5px; --r-badge:3px;
+}
+:root[data-look="terminal"][data-theme="dark"]{
+  --chrome:#0b0c0f; --bg:#101116; --card:#15171d; --desk:#060709;
+  --fg:#dadde4; --fg-2:#b9bdc8; --fg-3:#a5aab7; --fg-4:#8d93a1;
+  --line:#1d2027; --card-line:#23262f; --card-shadow:none; --row-line:#1e2129; --row-hover:rgba(218,221,228,.025);
+  --btn-line:#30343f; --btn-bg:transparent; --btn-hover:rgba(218,221,228,.05);
+  --field:#0e0f13; --check-line:#4f5563;
+  --yellow:#e5c07b; --yellow-bg:transparent; --yellow-line:rgba(229,192,123,.5);
+  --yellow-banner:rgba(229,192,123,.06); --yellow-banner-line:rgba(229,192,123,.22);
+  --red:#f07178; --red-text:#f48a90; --red-solid:#c93a42; --on-red-solid:#ffffff;
+  --red-bg:transparent; --red-line:rgba(240,113,120,.55); --danger-line:rgba(240,113,120,.5);
+  --red-banner:rgba(240,113,120,.07); --red-banner-line:rgba(240,113,120,.25);
+  --green:#8fd19e; --green-dot:#6cc287; --green-bg:rgba(143,209,158,.1); --ok-solid:#3f8f58;
+  --accent:#5b5ee6; --accent-2:#5b5ee6; --grad:#5b5ee6; --on-accent:#ffffff; --primary-shadow:none;
+  --accent-bg:rgba(99,102,241,.14); --accent-text:#a5a8ff;
+  --log-bg:#08090b; --log-fg:#c9ccd4;
+  --skel-a:rgba(218,221,228,.05); --skel-b:rgba(218,221,228,.1);
+  --backdrop:rgba(0,0,0,.6); --window-ring:rgba(218,221,228,.08);
+}
+:root[data-look="terminal"][data-theme="light"]{
+  --chrome:#eeeff2; --bg:#f6f7f9; --card:#ffffff; --desk:#d4d6dc;
+  --fg:#16171c; --fg-2:#3a3d47; --fg-3:#4a4e59; --fg-4:#5d616d;
+  --line:#e1e3e8; --card-line:#e1e3e8; --card-shadow:none; --row-line:#ecedf0; --row-hover:rgba(22,23,28,.02);
+  --btn-line:#cfd2d9; --btn-bg:#ffffff; --btn-hover:rgba(22,23,28,.04);
+  --field:#f6f7f9; --check-line:#9a9fab;
+  --yellow:#875a00; --yellow-bg:transparent; --yellow-line:rgba(135,90,0,.45);
+  --yellow-banner:rgba(229,170,40,.08); --yellow-banner-line:rgba(135,90,0,.22);
+  --red:#bf2630; --red-text:#bf2630; --red-solid:#c4303a; --on-red-solid:#ffffff;
+  --red-bg:transparent; --red-line:rgba(191,38,48,.45); --danger-line:rgba(191,38,48,.45);
+  --red-banner:rgba(191,38,48,.05); --red-banner-line:rgba(191,38,48,.2);
+  --green:#1d6e43; --green-dot:#2f9a5e; --green-bg:rgba(47,154,94,.1); --ok-solid:#2f8a56;
+  --accent:#4f46e5; --accent-2:#4f46e5; --grad:#4f46e5; --on-accent:#ffffff; --primary-shadow:none;
+  --accent-bg:rgba(79,70,229,.08); --accent-text:#4338ca;
+  --log-bg:#16171c; --log-fg:#d5d7de;
+  --skel-a:rgba(22,23,28,.05); --skel-b:rgba(22,23,28,.1);
+  --backdrop:rgba(22,23,28,.4); --window-ring:rgba(22,23,28,.2);
+}
+/* metadata in mono, everything a notch tighter */
+:root[data-look="terminal"] :is(.group-title,.ew-sub-t,.ew-row .src,.badge,.st-sub,.brand-sub,.held-note,.ew-note,.set-h,.chip){font-family:var(--mono)}
+:root[data-look="terminal"] .group-title{letter-spacing:.06em;font-weight:700;text-transform:lowercase;font-size:11.5px}
+:root[data-look="terminal"] .group-title::before{content:'#';color:var(--accent-text);margin-right:-2px}
+:root[data-look="terminal"] .ew-sub-t{font-size:12px;font-weight:600}
+:root[data-look="terminal"] .badge{font-weight:700;letter-spacing:.02em;font-size:10.5px;padding:2px 8px}
+:root[data-look="terminal"] .badge.critical,:root[data-look="terminal"] .badge.red{background:transparent;color:var(--red-text);border:1px solid var(--red-line)}
+:root[data-look="terminal"] .badge.green,:root[data-look="terminal"] .badge.patch{border-color:rgba(143,209,158,.35)}
+:root[data-look="terminal"][data-theme="light"] :is(.badge.green,.badge.patch){border-color:rgba(29,110,67,.35)}
+:root[data-look="terminal"] .row{padding:9px 16px}
+:root[data-look="terminal"] .ew-row{padding:7px 16px}
+:root[data-look="terminal"] .row .name{font-size:13.5px;font-weight:600}
+:root[data-look="terminal"] .ew-hint,:root[data-look="terminal"] .row .verdict{margin-top:1px}
+:root[data-look="terminal"] .group-h{margin:16px 2px 8px}
+:root[data-look="terminal"] .card{margin-bottom:18px}
+:root[data-look="terminal"] .glyph{border-radius:4px}
+:root[data-look="terminal"] .btn.primary{font-weight:600}
+:root[data-look="terminal"] .ew-btn .btn,:root[data-look="terminal"] .held-btns .btn{height:28px}

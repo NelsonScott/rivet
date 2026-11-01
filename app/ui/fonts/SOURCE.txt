@@ -1,0 +1,10 @@
+Inter.woff2 - Inter Variable (weights 100-900) by Rasmus Andersson and the Inter Project
+Authors, https://rsms.me/inter/ (https://github.com/rsms/inter). Licensed under the SIL Open
+Font License 1.1, see OFL-Inter.txt next to this file.
+
+Manrope.woff2 - Manrope Variable (weights 200-800, version 4.505) by The Manrope Project
+Authors, https://github.com/googlefonts/manrope, converted to WOFF2 unchanged from
+Manrope[wght].ttf in https://github.com/google/fonts (ofl/manrope). Licensed under the SIL
+Open Font License 1.1, see OFL-Manrope.txt next to this file.
+
+The OFL permits bundling both with an application. The page loads no web fonts.

@@ -1,0 +1,83 @@
+{
+ "_about": "Canned evidence for `rivet-apply --other-fix ID --dry-run` and app QA: the 2026-11-01 Alexa Media Player failure as it really was (apply.log lines and HA core log lines copied from that day). HACS downloaded v5.18.0 in 2 s and filed a restart_required repair; v5.19.0 had been released that morning, so the entity's latest_version moved and the old success check said 'still older'.",
+ "row": {
+  "id": "ha:update.alexa_media_player_update",
+  "source": "ha",
+  "name": "Alexa Media Player",
+  "installed": "v5.15.7",
+  "latest": "v5.18.0",
+  "severity": "minor",
+  "checked_at": "2026-11-01T12:49:48-05:00",
+  "status": "ok",
+  "link": "https://github.com/alandtse/alexa_media_player/releases/v5.18.0",
+  "hint": "Update in Home Assistant: Settings › System › Updates",
+  "command": null,
+  "what": "Controls Amazon Echo devices from Home Assistant (announce, play, routines).",
+  "used_by": "HACS integration inside Home Assistant (needs an HA restart after updating); backs the Alexa Media Player integration (34 entities).",
+  "ai": [],
+  "warning": null,
+  "where": null,
+  "action": "ha_install",
+  "confirm": false,
+  "kind": "integration",
+  "entity_id": "update.alexa_media_player_update",
+  "installable": true,
+  "backup": false,
+  "last_run": {
+   "at": "2026-11-01T13:10:14-05:00",
+   "result": "failed",
+   "note": "Home Assistant stopped without installing it (still v5.18.0); see Settings › System › Logs"
+  }
+ },
+ "apply_log": [
+  "{\"ts\": \"2026-11-01T13:09:45-05:00\", \"step\": \"other\", \"status\": \"start\", \"pct\": 0, \"msg\": \"Asking Home Assistant to install Alexa Media Player v5.18.0\\u2026\", \"log\": \"POST http://homeassistant.local:8123/api/services/update/install {\\\"entity_id\\\": \\\"update.alexa_media_player_update\\\"}\"}",
+  "{\"ts\": \"2026-11-01T13:10:14-05:00\", \"step\": \"other\", \"status\": \"fail\", \"pct\": 100, \"msg\": \"Home Assistant stopped without installing it (still v5.18.0); see Settings \\u203a System \\u203a Logs\", \"log\": null}",
+  "{\"ts\": \"2026-11-01T13:10:14-05:00\", \"step\": \"done\", \"status\": \"fail\", \"pct\": 100, \"msg\": \"Alexa Media Player: Home Assistant stopped without installing it (still v5.18.0); see Settings \\u203a System \\u203a Logs.\", \"log\": null, \"reboot_required\": false, \"kmod_verified\": null, \"summary\": \"Alexa Media Player: Home Assistant stopped without installing it (still v5.18.0); see Settings \\u203a System \\u203a Logs.\", \"cause\": \"Home Assistant stopped without installing it (still v5.18.0); see Settings \\u203a System \\u203a Logs\", \"error\": null, \"warnings\": [], \"results\": {}, \"log_path\": \"/home/you/.local/state/rivet/logs/apply.log\", \"other\": {\"id\": \"ha:update.alexa_media_player_update\", \"result\": \"failed\", \"item\": {\"id\": \"ha:update.alexa_media_player_update\", \"source\": \"ha\", \"name\": \"Alexa Media Player\", \"installed\": \"v5.15.7\", \"latest\": \"v5.18.0\", \"severity\": \"minor\", \"checked_at\": \"2026-11-01T12:49:48-05:00\", \"status\": \"ok\", \"link\": \"https://github.com/alandtse/alexa_media_player/releases/v5.18.0\", \"hint\": \"Update in Home Assistant: Settings \\u203a System \\u203a Updates\", \"command\": null, \"what\": \"Controls Amazon Echo devices from Home Assistant (announce, play, routines).\", \"used_by\": \"HACS integration inside Home Assistant (needs an HA restart after updating); backs the Alexa Media Player integration (34 entities).\", \"ai\": [], \"warning\": null, \"where\": null, \"action\": \"ha_install\", \"confirm\": false, \"kind\": \"integration\", \"entity_id\": \"update.alexa_media_player_update\", \"installable\": true, \"backup\": false, \"last_run\": {\"at\": \"2026-11-01T13:10:14-05:00\", \"result\": \"failed\", \"note\": \"Home Assistant stopped without installing it (still v5.18.0); see Settings \\u203a System \\u203a Logs\"}}}}"
+ ],
+ "ha_log": [
+  "2026-10-29 18:09:19.783 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration alexa_media which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant",
+  "2026-10-29 18:09:19.785 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration hacs which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant",
+  "2026-10-29 18:09:22.815 WARNING (ImportExecutor_0) [homeassistant.const] The deprecated constant CONCENTRATION_MICROGRAMS_PER_CUBIC_METER was used from alexa_media. It will be removed in HA Core 2027.8. Use UnitOfDensity.MICROGRAMS_PER_CUBIC_METER instead, please report it to the author of the 'alexa_media' custom integration",
+  "2026-10-29 18:09:22.816 WARNING (ImportExecutor_0) [homeassistant.const] The deprecated constant CONCENTRATION_PARTS_PER_MILLION was used from alexa_media. It will be removed in HA Core 2027.8. Use UnitOfRatio.PARTS_PER_MILLION instead, please report it to the author of the 'alexa_media' custom integration",
+  "2026-10-29 18:09:25.113 WARNING (MainThread) [homeassistant.helpers.frame] Detected that custom integration 'alexa_media' calls `device_registry.async_get_or_create` with a deprecated `via_device` parameter; use `via_device_id` instead at custom_components/alexa_media/helpers.py, line 217: add_devices_callback(devices, False). This will stop working in Home Assistant 2027.8.0, please create a bug ",
+  "2026-11-01 13:09:47.169 WARNING (SyncWorker_14) [homeassistant.loader] We found a custom integration alexa_media which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant",
+  "2026-11-01 13:09:47.170 WARNING (SyncWorker_14) [homeassistant.loader] We found a custom integration hacs which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant"
+ ],
+ "live": {
+  "entity_id": "update.alexa_media_player_update",
+  "target": "v5.18.0",
+  "entity": {
+   "state": "on",
+   "installed_version": "v5.18.0",
+   "latest_version": "v5.19.0",
+   "in_progress": false,
+   "update_percentage": null,
+   "skipped_version": null,
+   "supported_features": 23,
+   "release_summary": "Restart of Home Assistant required"
+  },
+  "home_assistant": {
+   "version": "2026.10.4",
+   "state": "RUNNING",
+   "safe_mode": false,
+   "recovery_mode": false
+  },
+  "domain": "alexa_media",
+  "restart_required_repairs": [
+   {
+    "issue_id": "restart_required_139664351_tags/v5.18.0",
+    "domain": "alexa_media",
+    "name": "Alexa Media Player"
+   }
+  ],
+  "loaded_version": "5.15.7"
+ },
+ "tools": {
+  "state": "{\n \"entity_id\": \"update.alexa_media_player_update\",\n \"target\": \"v5.18.0\",\n \"entity\": {\n  \"state\": \"on\",\n  \"installed_version\": \"v5.18.0\",\n  \"latest_version\": \"v5.19.0\",\n  \"in_progress\": false,\n  \"update_percentage\": null,\n  \"skipped_version\": null,\n  \"supported_features\": 23,\n  \"release_summary\": \"Restart of Home Assistant required\"\n },\n \"home_assistant\": {\n  \"version\": \"2026.10.4\",\n  \"state\": \"RUNNING\",\n  \"safe_mode\": false,\n  \"recovery_mode\": false\n },\n \"domain\": \"alexa_media\",\n \"restart_required_repairs\": [\n  {\n   \"issue_id\": \"restart_required_139664351_tags/v5.18.0\",\n   \"domain\": \"alexa_media\",\n   \"name\": \"Alexa Media Player\"\n  }\n ],\n \"loaded_version\": \"5.15.7\"\n}",
+  "logs": "2026-10-29 18:09:19.783 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration alexa_media which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant\n2026-10-29 18:09:19.785 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration hacs which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant\n2026-10-29 18:09:22.815 WARNING (ImportExecutor_0) [homeassistant.const] The deprecated constant CONCENTRATION_MICROGRAMS_PER_CUBIC_METER was used from alexa_media. It will be removed in HA Core 2027.8. Use UnitOfDensity.MICROGRAMS_PER_CUBIC_METER instead, please report it to the author of the 'alexa_media' custom integration\n2026-10-29 18:09:22.816 WARNING (ImportExecutor_0) [homeassistant.const] The deprecated constant CONCENTRATION_PARTS_PER_MILLION was used from alexa_media. It will be removed in HA Core 2027.8. Use UnitOfRatio.PARTS_PER_MILLION instead, please report it to the author of the 'alexa_media' custom integration\n2026-10-29 18:09:25.113 WARNING (MainThread) [homeassistant.helpers.frame] Detected that custom integration 'alexa_media' calls `device_registry.async_get_or_create` with a deprecated `via_device` parameter; use `via_device_id` instead at custom_components/alexa_media/helpers.py, line 217: add_devices_callback(devices, False). This will stop working in Home Assistant 2027.8.0, please create a bug \n2026-11-01 13:09:47.169 WARNING (SyncWorker_14) [homeassistant.loader] We found a custom integration alexa_media which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant\n2026-11-01 13:09:47.170 WARNING (SyncWorker_14) [homeassistant.loader] We found a custom integration hacs which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant",
+  "retry": "Alexa Media Player v5.18.0 was already downloaded; Home Assistant needs a restart to load it.\nRESULT: ok (installed): Alexa Media Player v5.18.0 was already downloaded; Home Assistant needs a restart to load it. [restart_pending]",
+  "restart": "Restarting Home Assistant to load Alexa Media Player…\nHome Assistant is back (71 s). Checking what it loaded…\nRESULT: ok (restarted): Restarted Home Assistant. Now running Alexa Media Player 5.18.0.",
+  "reload": "(canned) not needed",
+  "state_after_restart": "{\n \"entity_id\": \"update.alexa_media_player_update\",\n \"target\": \"v5.18.0\",\n \"entity\": {\n  \"state\": \"on\",\n  \"installed_version\": \"v5.18.0\",\n  \"latest_version\": \"v5.19.0\",\n  \"in_progress\": false,\n  \"update_percentage\": null,\n  \"skipped_version\": null,\n  \"supported_features\": 23,\n  \"release_summary\": null\n },\n \"home_assistant\": {\n  \"version\": \"2026.10.4\",\n  \"state\": \"RUNNING\",\n  \"safe_mode\": false,\n  \"recovery_mode\": false\n },\n \"domain\": \"alexa_media\",\n \"restart_required_repairs\": [],\n \"loaded_version\": \"5.18.0\"\n}"
+ }
+}

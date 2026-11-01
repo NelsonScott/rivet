@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet
+GenericName=Software Updates
+Comment=Review and apply Fedora, Flatpak and firmware updates
+Exec=rivet-updater
+Icon=xyz.scottnelson.Rivet
+Terminal=false
+Categories=System;PackageManager;
+Keywords=update;updates;upgrade;dnf;flatpak;firmware;software;
+StartupNotify=true
+StartupWMClass=xyz.scottnelson.Rivet
+X-GNOME-SingleWindow=true

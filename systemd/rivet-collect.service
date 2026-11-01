@@ -1,0 +1,31 @@
+[Unit]
+Description=Rivet: collect pending updates
+Documentation=https://github.com/NelsonScott/rivet
+# Pure metadata check -- it never starts a dnf/Flatpak/fwupd transaction.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# A systemd --user service does not inherit the login PATH, and the Claude Code
+# CLI that triage.py shells out to lives in ~/.local/bin.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/rivet-collect --quiet --notify
+# The collect run is I/O bound and must never compete with a game or a build.
+Nice=10
+IOSchedulingClass=idle
+CPUSchedulingPolicy=batch
+# Worst case of one run, from the per-step timeouts in backend/sources.py + triage.py
+# (the three sources run in parallel threads, so the longest chain counts):
+#   flatpak: mask 2x30 + remote-ls 2x180 + list 2x60 + libflatpak dry run 180 = 720 s
+#   (dnf: check-upgrade 180 + rpm -qa 60 + repoquery 120 + updateinfo 180 = 540 s; fwupd 120 s)
+#   host facts (mokutil) 15 s; triage: 110 s per claude call, 4 in parallel, 12 clusters
+#   each -> 2 rounds = 220 s covers 96 clusters (a 232-item backlog was 76).
+#   720 + 15 + 220 = 955 s, plus 60 s slack. (Other software's claude -p pass runs after
+#   state.json is written and only gets what is left of 950 s, at most 150 s.) 300 s used to cut a slow run off mid-way;
+#   a timeout now ends as state.json status=error, error=interrupted (exit 143).
+TimeoutStartSec=1015
+# Set RIVET_NO_NOTIFY=1 (e.g. via a drop-in) to mute notifications entirely.
+
+[Install]
+WantedBy=default.target

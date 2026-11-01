@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "generated_at": "2026-09-15T09:41:12-04:00",
+  "checked_at": "2026-09-15T09:41:03-04:00",
+  "status": "ok",
+  "error": null,
+  "host": {
+    "os": "Fedora 44",
+    "kernel_running": "7.2.4-200.fc44.x86_64",
+    "secure_boot": true
+  },
+  "flags": {
+    "steam_running": false,
+    "kernel_pending": false,
+    "akmod_nvidia_pending": false,
+    "reboot_required": false,
+    "blocked_count": 0,
+    "security_count": 0
+  },
+  "summary": {
+    "total": 0,
+    "total_bytes": 0
+  },
+  "groups": [
+    {
+      "id": "dnf",
+      "title": "System",
+      "subtitle": "dnf",
+      "items": []
+    },
+    {
+      "id": "flatpak",
+      "title": "Apps & runtimes",
+      "subtitle": "Flatpak",
+      "items": []
+    },
+    {
+      "id": "fwupd",
+      "title": "Firmware",
+      "subtitle": "fwupd",
+      "items": []
+    }
+  ]
+}

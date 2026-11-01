@@ -1,0 +1,8 @@
+{
+  "uuid": "rivet@scottnelson.xyz",
+  "name": "Rivet",
+  "description": "Pending Fedora updates in the top bar: count, a red accent when something needs attention, and shortcuts to the Rivet app and a fresh check. Reads ~/.local/state/rivet/state.json.",
+  "shell-version": ["50", "51"],
+  "url": "",
+  "version": 1
+}

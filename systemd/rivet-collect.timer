@@ -1,0 +1,15 @@
+[Unit]
+Description=Rivet: check for updates hourly
+Documentation=https://github.com/NelsonScott/rivet
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1h
+# The app rewrites this interval by dropping in
+# ~/.config/systemd/user/rivet-collect.timer.d/interval.conf
+AccuracySec=1min
+Persistent=true
+Unit=rivet-collect.service
+
+[Install]
+WantedBy=timers.target

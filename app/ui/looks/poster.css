@@ -1,0 +1,77 @@
+/* Look: Poster. The beaver icon's palette: cream ground, ink black, navy for action, red
+   kept for danger and the one rule under the black top band. Archivo (bold grotesk, condensed
+   for labels) + Space Mono, square corners, hard offset shadows on cards. */
+:root[data-look="poster"]{
+  --font:'Archivo','Inter','Adwaita Sans',system-ui,sans-serif;
+  --mono:'Space Mono',ui-monospace,'IBM Plex Mono',monospace;
+  --r-window:0px; --r-card:2px; --r-btn:2px; --r-badge:0px;
+  --deco:#c4241a;
+}
+:root[data-look="poster"][data-theme="light"]{
+  --chrome:#171614; --bg:#eee5d1; --card:#f8f2e4; --desk:#171614;
+  --fg:#171614; --fg-2:#38332b; --fg-3:#4a443a; --fg-4:#5e5649;
+  --line:#cbbfa6; --card-line:#171614; --card-shadow:3px 3px 0 #171614; --row-line:#ddd3bf; --row-hover:rgba(23,22,20,.04);
+  --btn-line:#171614; --btn-bg:#f8f2e4; --btn-hover:#ebe1cb;
+  --field:#eee5d1; --check-line:#171614;
+  --yellow:#7a5300; --yellow-bg:rgba(224,165,38,.24); --yellow-line:rgba(122,83,0,.55);
+  --yellow-banner:rgba(224,165,38,.14); --yellow-banner-line:rgba(122,83,0,.35);
+  --red:#b3221a; --red-text:#b3221a; --red-solid:#c4241a; --on-red-solid:#ffffff;
+  --red-bg:rgba(196,36,26,.12); --red-line:rgba(179,34,26,.6); --danger-line:rgba(179,34,26,.6);
+  --red-banner:rgba(196,36,26,.07); --red-banner-line:rgba(179,34,26,.3);
+  --green:#2b5732; --green-dot:#3f6b45; --green-bg:rgba(63,107,69,.16); --ok-solid:#3f6b45;
+  --accent:#1f3a6e; --accent-2:#c4241a; --grad:#1f3a6e; --on-accent:#fbf6ea; --primary-shadow:none;
+  --accent-bg:rgba(31,58,110,.1); --accent-text:#1f3a6e;
+  --log-bg:#171614; --log-fg:#eee5d1;
+  --skel-a:rgba(23,22,20,.07); --skel-b:rgba(23,22,20,.14);
+  --backdrop:rgba(23,22,20,.5); --window-ring:#171614;
+}
+:root[data-look="poster"][data-theme="dark"]{
+  --chrome:#0b0a09; --bg:#1f1c18; --card:#29251f; --desk:#0b0a09;
+  --fg:#f4ebd8; --fg-2:#dcd2bf; --fg-3:#cbc1ae; --fg-4:#b3a994;
+  --line:#3a342b; --card-line:#6a604f; --card-shadow:3px 3px 0 #000000; --row-line:#3d372d; --row-hover:rgba(244,235,216,.03);
+  --btn-line:#8a7f6c; --btn-bg:transparent; --btn-hover:rgba(244,235,216,.07);
+  --field:#1f1c18; --check-line:#b3a994;
+  --yellow:#f2c14e; --yellow-bg:rgba(242,193,78,.15); --yellow-line:rgba(242,193,78,.45);
+  --yellow-banner:rgba(242,193,78,.08); --yellow-banner-line:rgba(242,193,78,.28);
+  --red:#ff7a6b; --red-text:#ff8f80; --red-solid:#c4241a; --on-red-solid:#ffffff;
+  --red-bg:rgba(196,36,26,.25); --red-line:rgba(255,122,107,.5); --danger-line:rgba(255,122,107,.5);
+  --red-banner:rgba(196,36,26,.14); --red-banner-line:rgba(255,122,107,.3);
+  --green:#a9d4a0; --green-dot:#7fb875; --green-bg:rgba(127,184,117,.16); --ok-solid:#3f6b45;
+  --accent:#3a5fa3; --accent-2:#c4241a; --grad:#3a5fa3; --on-accent:#ffffff; --primary-shadow:none;
+  --accent-bg:rgba(58,95,163,.2); --accent-text:#a9c0ec;
+  --log-bg:#0b0a09; --log-fg:#e6dcc8;
+  --skel-a:rgba(244,235,216,.06); --skel-b:rgba(244,235,216,.12);
+  --backdrop:rgba(0,0,0,.6); --window-ring:#000000;
+}
+/* the black top band (both themes): its own text tokens, red for the call to action */
+:root[data-look="poster"] :is(.header,.summary,.status-strip){
+  --fg:#f4ebd8; --fg-2:#dcd2bf; --fg-3:#cdc3b0; --fg-4:#b8ae9b;
+  --btn-line:rgba(244,235,216,.5); --btn-bg:transparent; --btn-hover:rgba(244,235,216,.1); --field:rgba(244,235,216,.08);
+  --accent:#c4241a; --grad:#c4241a; --on-accent:#ffffff; --accent-text:#f4ebd8; --check-line:rgba(244,235,216,.6);
+  --red:#ff8f80; --red-text:#ff8f80; --yellow:#f2c14e; --yellow-bg:rgba(242,193,78,.16); --yellow-line:rgba(242,193,78,.45);
+  --green:#a9d4a0; --green-bg:rgba(127,184,117,.2); --line:#0b0a09;
+  --card:rgba(244,235,216,.06); --card-line:rgba(244,235,216,.3);
+  color:var(--fg);
+}
+:root[data-look="poster"] :is(.summary,.status-strip){border-bottom:6px solid var(--deco)}
+:root[data-look="poster"] .brand-name{font-weight:900;text-transform:uppercase;letter-spacing:.04em;font-stretch:80%;font-size:19px}
+:root[data-look="poster"] .app-icon{border-radius:0;box-shadow:none;outline:2px solid #f4ebd8}
+:root[data-look="poster"] .st-link{text-decoration:underline;text-decoration-color:var(--deco);text-decoration-thickness:2px;text-underline-offset:4px}
+:root[data-look="poster"] .st-link.bad{text-decoration-color:currentColor}
+:root[data-look="poster"] .glyph{border-radius:0}
+/* labels: condensed caps on an ink block */
+:root[data-look="poster"] .group-title{font-stretch:75%;font-size:13px;font-weight:900;letter-spacing:.08em;
+  background:var(--fg);color:var(--bg);padding:3px 9px 2px}
+:root[data-look="poster"] .group-title .n{background:var(--bg);color:var(--fg);border-color:var(--bg);border-radius:0}
+:root[data-look="poster"] .group-title .rows{color:var(--bg)}
+:root[data-look="poster"] .ew-sub-t .n{background:transparent;color:var(--fg);border:1.5px solid var(--fg);border-radius:0}
+:root[data-look="poster"] .ew-sub-t{font-stretch:80%;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--fg)}
+:root[data-look="poster"] .set-h{font-stretch:75%;font-size:13px;font-weight:900;color:var(--fg)}
+:root[data-look="poster"] .card,:root[data-look="poster"] .set-card{border-width:1.5px}
+:root[data-look="poster"] .badge{font-stretch:85%;font-weight:900;letter-spacing:.08em}
+:root[data-look="poster"] .badge.major,:root[data-look="poster"] .badge.red{background:var(--red-solid);color:var(--on-red-solid);border-color:var(--red-solid)}
+:root[data-look="poster"] .ew-row .src{border-radius:0;font-family:var(--mono);font-size:10px}
+:root[data-look="poster"] .btn{font-weight:800;letter-spacing:.01em}
+:root[data-look="poster"] .btn.primary{text-transform:uppercase;letter-spacing:.05em;font-size:12px}
+:root[data-look="poster"] .modal,:root[data-look="poster"] .dropdown,:root[data-look="poster"] .toast{border-radius:2px;border:1.5px solid var(--card-line);box-shadow:5px 5px 0 var(--fg)}
+:root[data-look="poster"][data-theme="dark"] .modal,:root[data-look="poster"][data-theme="dark"] .dropdown,:root[data-look="poster"][data-theme="dark"] .toast{box-shadow:5px 5px 0 #000}

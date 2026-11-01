@@ -1,0 +1,14 @@
+{
+  "_about": "Test fixture for know.load_local (made-up box: a few container apps and runbooks).",
+  "static": [
+    ["npm", "verdaccio", "Verdaccio, a lightweight private npm registry.", null],
+    ["podman", "couchdb", "Apache CouchDB, a JSON document database.", "Obsidian LiveSync"],
+    ["podman", "ghost", "Ghost, the blogging platform.", "the blog"]
+  ],
+  "app_names": {"postiz": "Postiz", "obsidian": "Obsidian LiveSync", "ghost": "the blog", "archivebox": "ArchiveBox"},
+  "stateful_apps": ["postiz", "obsidian", "ghost"],
+  "runbooks": {
+    "obsidian": ["Obsidian sync runbook", "https://example.com/runbooks/obsidian-sync"],
+    "postiz": ["Postiz runbook", "https://example.com/runbooks/postiz"]
+  }
+}

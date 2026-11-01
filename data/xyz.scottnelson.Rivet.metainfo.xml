@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>xyz.scottnelson.Rivet</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT AND OFL-1.1</project_license>
+  <name>Rivet</name>
+  <summary>Fedora updates in one place, with the risky ones flagged</summary>
+  <developer id="xyz.scottnelson">
+    <name>Scott Nelson</name>
+  </developer>
+  <description>
+    <p>
+      Rivet replaces GNOME Software for updates. It shows every pending dnf,
+      Flatpak and firmware update in one list, says in one line what each one
+      does, and colours it green, yellow or red so you know which ones to read
+      before you click. It also keeps an eye on the software GNOME Software
+      never sees.
+    </p>
+    <ul>
+      <li>One list for dnf, Flatpak and fwupd, checked hourly by a user timer, with a top-bar badge when something is waiting</li>
+      <li>Each update rated by fixed rules (security advisories, kernel, drivers, runtimes), with a short plain reason</li>
+      <li>Kernel plus NVIDIA akmod updates wait for the module to build and verify it before a reboot is offered</li>
+      <li>Flatpak runtime updates are held while Steam is running; a pinned Flatpak can be tried again and rolled back</li>
+      <li>Other software: stale npm, pipx, uv and cargo tools, GNOME extensions, AppImages, containers and Home Assistant</li>
+      <li>When a run fails, Fix it asks Claude Code (if installed) to read the logs and propose a fix you approve step by step</li>
+    </ul>
+    <p>
+      Not affiliated with Fedora, GNOME or Home Assistant.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/NelsonScott/rivet</url>
+  <url type="bugtracker">https://github.com/NelsonScott/rivet/issues</url>
+  <url type="vcs-browser">https://github.com/NelsonScott/rivet</url>
+  <launchable type="desktop-id">xyz.scottnelson.Rivet.desktop</launchable>
+  <icon type="stock">xyz.scottnelson.Rivet</icon>
+  <provides>
+    <binary>rivet-updater</binary>
+    <binary>rivet-collect</binary>
+    <binary>rivet-apply</binary>
+    <binary>rivet-doctor</binary>
+  </provides>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/NelsonScott/rivet/main/docs/screenshot.png</image>
+      <caption>Pending updates, each with a colour and a one-line reason</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <categories>
+    <category>System</category>
+    <category>PackageManager</category>
+  </categories>
+  <keywords>
+    <keyword>update</keyword>
+    <keyword>dnf</keyword>
+    <keyword>flatpak</keyword>
+    <keyword>firmware</keyword>
+  </keywords>
+  <releases>
+    <release version="0.1.0" date="2026-11-01">
+      <description>
+        <p>First public release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

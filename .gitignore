@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+# local overrides for backend/know.py (what this one box runs; see know.load_local)
+backend/know.local.json
+# private agent notes for one machine (public notes are CLAUDE.md)
+/CLAUDE.local.md
+/packaging/rpm/out

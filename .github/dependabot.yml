@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # The backend is stdlib only today; this picks up a requirements file or
+  # pyproject.toml as soon as one is added.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly

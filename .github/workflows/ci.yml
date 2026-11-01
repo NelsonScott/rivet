@@ -1,0 +1,39 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: backend tests and selftest (Fedora 44)
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    timeout-minutes: 20
+    steps:
+      - name: Python, PyGObject, GTK4 and WebKitGTK
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            python3 python3-rpm python3-gobject gobject-introspection \
+            gtk4 webkitgtk6.0 libadwaita flatpak-libs git
+      - uses: actions/checkout@v4
+      # The tests assert what an unprivileged desktop user sees (pkexec prompts and so on),
+      # so they run as a normal user, not as the container's root.
+      - name: Test user
+        run: |
+          useradd -m ci
+          chown -R ci "$GITHUB_WORKSPACE"
+          git config --system --add safe.directory '*'
+      - name: Backend tests
+        run: runuser -u ci -- bash -c 'cd backend && python3 -m unittest discover -s tests -v'
+      - name: App selftest (no window)
+        run: runuser -u ci -- python3 app/selftest.py
+      - name: Look contrast
+        run: runuser -u ci -- python3 app/qa/looks-contrast.py

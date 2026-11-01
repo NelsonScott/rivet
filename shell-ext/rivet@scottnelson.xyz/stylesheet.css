@@ -1,0 +1,64 @@
+/* Rivet top-bar indicator.
+   Palette borrowed from claude-usage@scottnelson / the Rivet prototype:
+     cream #f4f0ea · text #d6d1c8 · muted #9a948c · red #d96a5b · surface #2e2e30 */
+
+/* ---- panel ---- */
+.rivet-box { spacing: 5px; }
+
+.rivet-icon { icon-size: 16px; padding: 0; color: #d6d1c8; }
+
+.rivet-count {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f4f0ea;
+    font-feature-settings: "tnum";
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.9), 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+/* red state is carried by the dot, not the number: the count stays cream so the
+   indicator is not mistaken for the orange claude-usage figures next to it */
+.rivet-count-red { color: #f4f0ea; }
+
+/* the "something is red" dot, tucked up beside the count */
+.rivet-dot {
+    background-color: #d96a5b;
+    border-radius: 4px;
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    margin-left: -1px;
+    box-shadow: 0 0 3px rgba(217, 106, 91, 0.9);
+}
+
+/* "checking" / error / no-data states */
+.rivet-dim { color: #8f8981; }
+
+/* ---- dropdown ---- */
+.rivet-menu .popup-menu-content {
+    background-color: #2e2e30;
+    border-radius: 16px;
+    padding: 12px 0 8px;
+}
+
+.rivet-menu .popup-separator-menu-item { margin: 4px 18px 6px; }
+.rivet-menu .popup-separator-menu-item .popup-separator-menu-item-separator {
+    background-color: #454548;
+    height: 1px;
+    margin: 0;
+}
+
+.rivet-head { padding: 2px 18px 6px; min-width: 400px; }
+.rivet-headbox { spacing: 3px; }
+
+.rivet-summary {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f4f0ea;
+    max-width: 420px;
+}
+
+.rivet-checked { font-size: 11px; color: #9a948c; }
+
+.rivet-menu .popup-menu-item { font-size: 14px; color: #e6e1d8; padding: 8px 18px; }
+.rivet-menu .popup-menu-item:hover,
+.rivet-menu .popup-menu-item:focus { color: #ffffff; }
