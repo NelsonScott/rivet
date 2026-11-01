@@ -17,9 +17,6 @@
 
 </div>
 
-> daily by the author for months; the newer parts are covered by an automated scenario
-> suite.
-
 Rivet replaces GNOME Software for updates. It shows every pending dnf, Flatpak and
 firmware update in one list, says in one line what each one does, and colours it
 green, yellow or red so you know which ones to read before you click. It also keeps
