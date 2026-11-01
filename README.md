@@ -17,7 +17,6 @@
 
 </div>
 
-> Not affiliated with Fedora, GNOME or Home Assistant. Written with Claude Code. Used
 > daily by the author for months; the newer parts are covered by an automated scenario
 > suite.
 
