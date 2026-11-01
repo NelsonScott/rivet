@@ -11,7 +11,7 @@
 [![COPR build](https://copr.fedorainfracloud.org/coprs/scottnelson/rivet-updater/package/rivet-updater/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/scottnelson/rivet-updater/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img src="docs/screenshot.png" width="560" alt="Rivet listing pending updates: openssl marked security, the kernel and NVIDIA driver marked reboot and rebuild, Flatpak runtimes blocked while Steam runs">
+<img src="docs/screenshot.png" width="840" alt="Rivet listing pending updates: openssl marked security, the kernel and NVIDIA driver marked reboot and rebuild, Flatpak runtimes blocked while Steam runs">
 
 <sub>Demo data</sub>
 
