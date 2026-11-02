@@ -654,7 +654,14 @@ class NoToolsAnywhere(unittest.TestCase):
 
 
 # Names of the author's own machine, tools and projects (2026-11-01): whole words, any case.
-BOX_NAMES = (r"\b(?:hades|openclaw|vicinae|upkeep|fable|tailscale|howdy|sous|sonic|otter|remindme)\b")
+# Public tool names live here; private project names come from an untracked, gitignored
+# box_names.local.txt next to this file (one name per line), so the list itself stays private.
+_LOCAL_NAMES = Path(__file__).with_name("box_names.local.txt")
+_NAMES = ["openclaw", "vicinae", "upkeep", "fable", "tailscale", "howdy"]
+if _LOCAL_NAMES.is_file():
+    _NAMES += [ln.strip() for ln in _LOCAL_NAMES.read_text().splitlines()
+               if ln.strip() and not ln.lstrip().startswith("#")]
+BOX_NAMES = r"\b(?:" + "|".join(map(re.escape, _NAMES)) + r")\b"
 RESIDUE = re.compile(r"/home/scottnelson|scottnelson\.|192\.168\.\d+\.\d+|100\.\d+\.\d+\.\d+|notion\.(so|com)|"
                      r"agent\.env\.tpl|secrets-load|1Password|\bScott\b|monitor\.local|" + BOX_NAMES, re.I)
 
@@ -717,9 +724,9 @@ class PersonalResidue(unittest.TestCase):
 
     def test_box_names_pattern(self):
         rx = re.compile(BOX_NAMES, re.I)
-        for hit in ("Hades II", "OPENCLAW", "vicinae.service", "Upkeep", "fable", "howdy", "the Sous app"):
+        for hit in ("OPENCLAW", "vicinae.service", "Upkeep", "fable", "howdy", "tailscale up"):
             self.assertTrue(rx.search(hit), hit)
-        for miss in ("fables", "sonically", "otters", "upkeeping", "resource"):
+        for miss in ("fables", "upkeeping", "tailscaled", "showdy", "resource"):
             self.assertFalse(rx.search(miss), miss)
 
     def test_hints_the_collectors_can_show(self):

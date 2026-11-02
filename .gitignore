@@ -5,3 +5,5 @@ backend/know.local.json
 # private agent notes for one machine (public notes are CLAUDE.md)
 /CLAUDE.local.md
 /packaging/rpm/out
+# private project names for test_abuse.PersonalResidue (see BOX_NAMES there)
+backend/tests/box_names.local.txt
