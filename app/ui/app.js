@@ -779,8 +779,8 @@
       out += `</div>`;
     }
     if (!shown) out += `<div class="empty-search">Nothing matches “${esc(state.query)}”. <button class="btn small ghost" data-action="clear-search">Clear</button></div>`;
-    out += renderHeldSection();
     out += renderElsewhereSection(q);
+    out += renderHeldSection();      // last: pins are the user's own "not now" (2026-11-03)
     out += `</div>`;
     return out;
   }
@@ -1777,7 +1777,7 @@
   }
   function renderEmpty() {
     if (heldItems().length || ewItems().length || (flags().flatpak_remote_errors || []).length) {
-      return `${renderStatusStrip()}<div class="list" id="list">${renderHeldSection()}${renderElsewhereSection('', true)}</div>`;
+      return `${renderStatusStrip()}<div class="list" id="list">${renderElsewhereSection('', true)}${renderHeldSection()}</div>`;
     }
     const sub = kernelLine();
     return `<div class="hero trimmed"><div class="inner">

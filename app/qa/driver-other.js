@@ -90,7 +90,7 @@
       check(/^Outside dnf and Flatpak/.test(txt('.ew-note')), 'subtitle "Outside dnf and Flatpak"');
       check(/more in Other software/.test(txt('.ew-link')), 'the updates screen keeps the header pointer');
       const heldH = q('.held-h'), ewH = q('.ew-h');
-      check(heldH && ewH && (heldH.compareDocumentPosition(ewH) & Node.DOCUMENT_POSITION_FOLLOWING), 'Other software comes after Held back');
+      check(heldH && ewH && (ewH.compareDocumentPosition(heldH) & Node.DOCUMENT_POSITION_FOLLOWING), 'Held back comes last, after Other software');
       shapeChecks(st().doc);
       const inGroup = (g) => qa(`.ew-group[data-group="${g}"] .ew-row`).map(r => r.dataset.id);
       check(inGroup('pc').includes('npm:pnpm') && inGroup('pc').includes('cargo:_source') && inGroup('pc').includes('gnome-ext:tilingshell@ferrarodomenico.com'), 'npm, cargo and GNOME extensions are under This PC');
@@ -210,7 +210,7 @@
     then(() => push(nothingPending), 3);
     then(() => {
       check(!!q('.status-strip') && !q('main .hero') && /^Fedora and Flatpak: up to date · 2 held back, 1 to try · 16 other updates · 1 check failed$/.test(txt('.st-line')), 'the strip, as one sentence: "' + txt('.st-line') + '"');
-      const strip = q('.status-strip').getBoundingClientRect(), h = q('.held-h').getBoundingClientRect();
+      const strip = q('.status-strip').getBoundingClientRect(), h = q('.ew-h').getBoundingClientRect();
       check(strip.height <= 80 && h.top - strip.bottom <= 44, 'compact: the first section starts right under the strip (' + Math.round(strip.height) + ' px, gap ' + Math.round(h.top - strip.bottom) + ')');
       shot('strip-' + theme());
     }, 8);

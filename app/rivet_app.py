@@ -444,6 +444,28 @@ class Bridge:
         self.push_caps()
         self.push_state()
         self._health_spawn()          # a fresh look (a stat + a systemctl call), result pushed
+        self._refresh_if_pre_boot()
+
+    def _refresh_if_pre_boot(self):
+        """A state.json written before the current boot describes the previous
+        boot (typically the updates the reboot finished). The collector timer
+        re-runs OnBootSec later; the first window after a boot starts that check
+        itself rather than show the old list meanwhile. Once per process."""
+        if getattr(self, "_boot_checked", False) or self.demo or self.applying:
+            return
+        self._boot_checked = True
+        doc = self.load_state()
+        if doc.get("status") != "ok":
+            return                 # checking already / error: nothing to second-guess
+        try:
+            gen = datetime.fromisoformat(str(doc.get("generated_at"))).timestamp()
+            with open("/proc/uptime") as f:
+                booted = time.time() - float(f.read().split()[0])
+        except (TypeError, ValueError, OSError):
+            return
+        if gen < booted:
+            log("state.json predates this boot (%s); re-collecting" % doc.get("generated_at"))
+            self.cmd_refresh({})
 
     def cmd_leaveDoctor(self, _msg):
         """The UI left the doctor view (back to the list): state pushes resume."""
@@ -672,6 +694,10 @@ class Bridge:
             self.applying = False
             self._release(proc)
             self._flush_pending_state()
+            # state.json still lists what was just installed; re-collect so the
+            # list is current before the next window (or the reboot) reads it.
+            # The done screen is kept: a state push never replaces it.
+            GLib.timeout_add(600, lambda: (self.cmd_refresh({}), False)[1])
 
     def _forward_event(self, line):
         try:

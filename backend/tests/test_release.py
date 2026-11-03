@@ -33,7 +33,7 @@ import triage  # noqa: E402
 from fake_dnf import FakeWorld  # noqa: E402
 
 STATE = json.loads((BACKEND / "fixtures" / "state-selfupdate.json").read_text())
-HOWDY = "copr:copr.fedorainfracloud.org:scottnelson:howdy"
+SOMETOOL = "copr:copr.fedorainfracloud.org:someone:sometool"
 # the shape of https://fedoraproject.org/releases.json: one entry per image
 RELEASES = [
     {"version": "45 Beta", "arch": "x86_64", "variant": "Workstation"},
@@ -115,8 +115,8 @@ class Repos(unittest.TestCase):
             "[copr:copr.fedorainfracloud.org:someone:good]\nname=Copr repo for good\nenabled=1\n"
             "baseurl=https://download.copr.fedorainfracloud.org/results/someone/good/fedora-$releasever-$basearch/\n")
         (self.dir / "_copr:gone.repo").write_text(
-            f"[{HOWDY}]\nname=Copr repo for howdy\nenabled=1\n"
-            "baseurl=https://download.copr.fedorainfracloud.org/results/scottnelson/howdy/fedora-$releasever-$basearch/\n")
+            f"[{SOMETOOL}]\nname=Copr repo for sometool\nenabled=1\n"
+            "baseurl=https://download.copr.fedorainfracloud.org/results/someone/sometool/fedora-$releasever-$basearch/\n")
         (self.dir / "fedora.repo").write_text(
             "[fedora]\nname=Fedora $releasever - $basearch\nenabled=1\n"
             "#baseurl=http://download.example/pub/fedora/linux/releases/$releasever/Everything/$basearch/os/\n"
@@ -133,25 +133,25 @@ class Repos(unittest.TestCase):
     def test_only_enabled_repos_that_follow_releasever_are_probed(self):
         repos = release.enabled_release_repos(self.dir)
         self.assertEqual(sorted(r["id"] for r in repos),
-                         sorted(["copr:copr.fedorainfracloud.org:someone:good", HOWDY, "fedora", "flaky"]))
+                         sorted(["copr:copr.fedorainfracloud.org:someone:good", SOMETOOL, "fedora", "flaky"]))
         kinds = {r["id"]: r["kind"] for r in repos}
-        self.assertEqual((kinds["fedora"], kinds["flaky"], kinds[HOWDY]), ("metalink", "mirrorlist", "baseurl"))
+        self.assertEqual((kinds["fedora"], kinds["flaky"], kinds[SOMETOOL]), ("metalink", "mirrorlist", "baseurl"))
 
     def test_probe_urls(self):
         repos = {r["id"]: r for r in release.enabled_release_repos(self.dir)}
-        self.assertEqual(release.probe_url(repos[HOWDY], 45, "x86_64"),
-                         "https://download.copr.fedorainfracloud.org/results/scottnelson/howdy/fedora-45-x86_64/repodata/repomd.xml")
+        self.assertEqual(release.probe_url(repos[SOMETOOL], 45, "x86_64"),
+                         "https://download.copr.fedorainfracloud.org/results/someone/sometool/fedora-45-x86_64/repodata/repomd.xml")
         self.assertEqual(release.probe_url(repos["fedora"], 45, "x86_64"),
                          "https://mirrors.fedoraproject.org/metalink?repo=fedora-45&arch=x86_64")
 
     def test_statuses_ok_missing_unknown(self):
         def status(url):
-            return 200 if "good" in url or "fedoraproject" in url else 404 if "howdy" in url else None
+            return 200 if "good" in url or "fedoraproject" in url else 404 if "sometool" in url else None
         out = release.probe_repos(45, repos_dir=self.dir, arch="x86_64", status=status)
         by = {r["id"]: r["status"] for r in out}
-        self.assertEqual(by, {"copr:copr.fedorainfracloud.org:someone:good": "ok", HOWDY: "missing",
+        self.assertEqual(by, {"copr:copr.fedorainfracloud.org:someone:good": "ok", SOMETOOL: "missing",
                               "fedora": "ok", "flaky": "unknown"})
-        self.assertEqual([r["id"] for r in out if r["status"] == "missing"], [HOWDY])
+        self.assertEqual([r["id"] for r in out if r["status"] == "missing"], [SOMETOOL])
 
     def test_no_repos_means_no_probe(self):
         self.assertEqual(release.probe_repos(45, repos_dir=self.dir / "nothing", status=lambda u: 200), [])
@@ -217,10 +217,10 @@ class Row(unittest.TestCase):
         line, why = release.verdict(rel())
         self.assertEqual(line, "Fedora 45 is out. Finish the other updates first, then upgrade when you have an hour.")
         self.assertIn("20 to 60 minutes", why)
-        line, why = release.verdict(rel(missing_repos=[HOWDY], checked_repos=14,
+        line, why = release.verdict(rel(missing_repos=[SOMETOOL], checked_repos=14,
                                        repos=[{"id": "flaky", "status": "unknown"}]))
-        self.assertIn("1 of your repos has no Fedora 45 builds yet (scottnelson/howdy)", line)
-        self.assertIn("1 of 14 enabled repos has no Fedora 45 packages yet (scottnelson/howdy)", why)
+        self.assertIn("1 of your repos has no Fedora 45 builds yet (someone/sometool)", line)
+        self.assertIn("1 of 14 enabled repos has no Fedora 45 packages yet (someone/sometool)", why)
         self.assertIn("1 repo could not be checked (flaky)", why)
         line, _ = release.verdict(rel(downloaded=True))
         self.assertEqual(line, "Fedora 45 is downloaded. Restart to install it when you have an hour.")
@@ -230,7 +230,7 @@ class Row(unittest.TestCase):
         self.assertIn("4 of your repos have no Fedora 45 builds yet (a, b, c, …)", line)
 
     def test_deterministic_triage_uses_those_words_and_the_model_never_sees_it(self):
-        it = release.item(rel(missing_repos=[HOWDY], checked_repos=14))
+        it = release.item(rel(missing_repos=[SOMETOOL], checked_repos=14))
         rules.apply_rules([it], steam_running=False)
         d = triage.deterministic(it)
         self.assertTrue(d["verdict"].startswith("Fedora 45 is out. 1 of your repos"))
@@ -263,14 +263,14 @@ class Collector(unittest.TestCase):
     def test_the_row_is_the_last_dnf_item_counted_and_kept_whole(self):
         dnf = [dict(i) for i in STATE["groups"][0]["items"][:3]]
         doc = self.run_collect({"dnf": dnf, "release": {"version": 45, "current": 44,
-                                                        "missing_repos": [HOWDY], "checked_repos": 14}})
+                                                        "missing_repos": [SOMETOOL], "checked_repos": 14}})
         items = doc["groups"][0]["items"]
         self.assertEqual(items[-1]["id"], "release:45")
         self.assertEqual(len(items), 4)
         row = items[-1]
         self.assertEqual((row["op"], row["risk"], row["badge"], row["selected_default"]), ("release", "yellow", "reboot", False))
-        self.assertEqual(row["release"]["missing_repos"], [HOWDY])
-        self.assertIn("scottnelson/howdy", row["verdict"])
+        self.assertEqual(row["release"]["missing_repos"], [SOMETOOL])
+        self.assertIn("someone/sometool", row["verdict"])
         self.assertEqual(row["notes_url"], "https://docs.fedoraproject.org/en-US/fedora/f45/release-notes/")
         self.assertEqual(doc["summary"]["total"], 4)
         self.assertTrue(doc["flags"]["reboot_required"])
@@ -341,7 +341,7 @@ def run_apply(world, ids, state, *, prefix=("pkexec",), lines=DOWNLOAD_LINES, rc
 
 class Apply(unittest.TestCase):
     def test_runs_last_with_the_missing_repos_disabled_and_done_carries_it(self):
-        st, it = state_with_release(missing_repos=[HOWDY], checked_repos=14)
+        st, it = state_with_release(missing_repos=[SOMETOOL], checked_repos=14)
         curl = next(i for i in st["groups"][0]["items"] if i["name"] == "curl")
         w = FakeWorld.from_items([curl])
         rc, evs, done, _ = run_apply(w, [curl["id"], it["id"]], st)
@@ -349,10 +349,10 @@ class Apply(unittest.TestCase):
         steps = [e["step"] for e in evs]
         self.assertLess(steps.index("install"), steps.index("release"), "the release runs after the rpm transaction")
         self.assertEqual(FakeStream.calls, [["pkexec", "dnf5", "system-upgrade", "download", "--releasever=45", "-y",
-                                             f"--disable-repo={HOWDY}"]])
+                                             f"--disable-repo={SOMETOOL}"]])
         rel_evs = [e for e in evs if e["step"] == "release"]
         self.assertEqual(rel_evs[0]["status"], "start")
-        self.assertIn("Leaving out 1 repo with no Fedora 45 build yet: " + HOWDY, rel_evs[1]["msg"])
+        self.assertIn("Leaving out 1 repo with no Fedora 45 build yet: " + SOMETOOL, rel_evs[1]["msg"])
         self.assertIn("Asking for permission", rel_evs[2]["msg"])
         self.assertTrue(any(e["msg"] == "Fedora 45 is 3.1 GiB to download." for e in rel_evs))
         pcts = [e["pct"] for e in rel_evs if e["pct"] is not None]
@@ -362,7 +362,7 @@ class Apply(unittest.TestCase):
         self.assertEqual(rel_evs[-1]["msg"], "Fedora 45 is downloaded (3.1 GiB). Restart to install it.")
         self.assertEqual(done["release"], {"version": 45, "downloaded": True, "status": "ok", "size": "3.1 GiB", "nvidia": True})
         self.assertEqual(done["results"]["release"]["packages"], 1834)
-        self.assertEqual(done["results"]["release"]["disabled_repos"], [HOWDY])
+        self.assertEqual(done["results"]["release"]["disabled_repos"], [SOMETOOL])
         self.assertEqual(done["summary"], "Applied 1 package(s), Fedora 45 downloaded. Restart to install Fedora 45.")
         self.assertEqual(done["results"]["dnf"]["installed"], 1)
 
@@ -406,7 +406,7 @@ class Apply(unittest.TestCase):
         st, it = state_with_release()
         w = FakeWorld.from_items([])
         lines = ["Updating and loading repositories:",
-                 "Problem: package howdy-3.0.0-1.fc44.x86_64 requires python3.14, but none of the providers can be installed",
+                 "Problem: package sometool-3.0.0-1.fc44.x86_64 requires python3.14, but none of the providers can be installed",
                  "  - conflicting requests",
                  "You can try to add to command line:",
                  "  --allowerasing to allow removing of installed packages to resolve problems"]
@@ -414,7 +414,7 @@ class Apply(unittest.TestCase):
         self.assertEqual((rc, done["status"]), (1, "fail"))
         self.assertIn("would have to be removed (dnf says --allowerasing)", done["cause"])
         fail = next(e for e in evs if e["step"] == "release" and e["status"] == "fail")
-        self.assertTrue(fail["error"].startswith("Problem: package howdy"))
+        self.assertTrue(fail["error"].startswith("Problem: package sometool"))
 
     def test_a_timeout_is_said(self):
         st, it = state_with_release()

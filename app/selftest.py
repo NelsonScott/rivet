@@ -13,6 +13,7 @@ import shutil
 import sys
 import time
 import tempfile
+from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -197,6 +198,9 @@ def run():
             "print('plan:', open(sys.argv[sys.argv.index('--plan')+1]).read(), file=sys.stderr)\n"
         )
     os.environ["RIVET_APPLY_CMD"] = "%s %s" % (sys.executable, fake)
+    # the collector that must run once rivet-apply exits: it leaves a marker
+    collected = os.path.join(TMP, "collected-after-apply")
+    os.environ["RIVET_COLLECT_CMD"] = "%s -c \"open(%r, 'w').close()\"" % (sys.executable, collected)
     out = []
     b = U.Bridge(out.append)
     b.handle(json.dumps({"cmd": "apply", "items": ["dnf:kernel", "dnf:akmod-nvidia"]}))
@@ -216,7 +220,9 @@ def run():
     wait_for(lambda: False, 400)
     check(CHUNKS[0] - n0 == 0, "apply reader goes idle after EOF (%d reads in 400 ms after exit)" % (CHUNKS[0] - n0))
     check(b.applying is False, "applying flag cleared once rivet-apply exits")
-    del os.environ["RIVET_APPLY_CMD"]
+    wait_for(lambda: os.path.exists(collected), 3000)
+    check(os.path.exists(collected), "a collector runs once rivet-apply exits (state.json listed what was just installed)")
+    del os.environ["RIVET_APPLY_CMD"], os.environ["RIVET_COLLECT_CMD"]
 
     # ---------------------------------------------------------------- fix it (doctor)
     print("\nfix it: fixIt / runFix bridge commands (fake rivet-doctor):")
@@ -991,6 +997,45 @@ def run():
     check(out == [], "non-http(s) URLs are refused")
 
     # -------------------------------------------------------------- refresh
+    print("\nready after a boot (state.json older than the boot starts a check):")
+    collected = os.path.join(TMP, "collected-after-boot")
+    os.environ["RIVET_COLLECT_CMD"] = "%s -c \"open(%r, 'w').close()\"" % (sys.executable, collected)
+    with open("/proc/uptime") as fh:
+        booted = time.time() - float(fh.read().split()[0])
+
+    def write_state(status, generated):
+        os.makedirs(os.path.dirname(U.STATE_FILE), exist_ok=True)
+        stamp = datetime.fromtimestamp(generated).astimezone().isoformat(timespec="seconds")
+        json.dump({"schema": 1, "status": status, "error": None, "generated_at": stamp, "checked_at": stamp,
+                   "host": {}, "flags": {}, "summary": {"total": 1, "total_bytes": 0},
+                   "groups": [{"id": "dnf", "items": [{"id": "dnf:x", "name": "x"}]}]}, open(U.STATE_FILE, "w"))
+
+    def ready_starts_check(status, generated):
+        if os.path.exists(collected):
+            os.remove(collected)
+        write_state(status, generated)
+        b = U.Bridge(lambda m: None)
+        b.handle(json.dumps({"cmd": "ready"}))
+        wait_for(lambda: os.path.exists(collected), 2000)
+        started = os.path.exists(collected)
+        b.handle(json.dumps({"cmd": "ready"}))      # a second ready in the same process
+        wait_for(lambda: False, 300)
+        return started, b
+
+    started, b = ready_starts_check("ok", booted - 3600)
+    check(started, "a list written an hour before the boot: ready starts the collector")
+    os.remove(collected)
+    b.handle(json.dumps({"cmd": "ready"}))
+    wait_for(lambda: False, 300)
+    check(not os.path.exists(collected), "only once per process")
+    started, _ = ready_starts_check("ok", booted + 60)
+    check(not started, "a list written after the boot is left alone")
+    started, _ = ready_starts_check("checking", booted - 3600)
+    check(not started, "a check already in progress is not restarted")
+    del os.environ["RIVET_COLLECT_CMD"]
+    if os.path.exists(U.STATE_FILE):
+        os.remove(U.STATE_FILE)
+
     print("\nrefresh:")
     out = []
     b = U.Bridge(out.append)
