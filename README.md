@@ -42,7 +42,7 @@ an eye on the software GNOME Software never sees.
 
 ## Install
 
-### COPR (Fedora 44 and Rawhide)
+### COPR (Fedora 44, 45 and Rawhide)
 
 ```sh
 sudo dnf copr enable scottnelson/rivet-updater

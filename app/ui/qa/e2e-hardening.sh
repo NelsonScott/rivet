@@ -8,6 +8,7 @@
 # Pass = DRIVER DONE, no "FAIL" expectation, exactly one "apply:" line in the app log for the
 # double-clicked Update now, and the app idle afterwards (< 30 ticks in 3 s).
 set -u
+. "$(dirname "$(readlink -f "$0")")/../../qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-e2e-hardening}; mkdir -p "$OUT/shots"
 HERE=$(dirname "$(readlink -f "$0")")          # app/ui/qa
 APP=$(readlink -f "$HERE/../..")               # app

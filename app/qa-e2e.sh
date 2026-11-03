@@ -26,6 +26,7 @@
 # it measures the app's CPU while idle: the 2026-09-18 bug was the main loop spinning
 # after rivet-apply exited.
 set -u
+. "$(dirname "$(readlink -f "$0")")/qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-e2e}; mkdir -p "$OUT/shots"; shift || true
 SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix looks abuse abuse-noclaude second-instance release}
 HERE=$(dirname "$(readlink -f "$0")")

@@ -5,6 +5,7 @@
 #
 #   timeout 200 dbus-run-session -- bash qa-transitions.sh /tmp/rivet-qa-t
 set -u
+. "$(dirname "$(readlink -f "$0")")/../app/qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-qa-transitions}
 FIX=$(cd "$(dirname "$0")/fixtures" && pwd)
 mkdir -p "$OUT/state"

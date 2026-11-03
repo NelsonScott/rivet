@@ -61,6 +61,11 @@
     <keyword>firmware</keyword>
   </keywords>
   <releases>
+    <release version="0.2.0" date="2026-11-03">
+      <description>
+        <p>A newer Fedora release appears as one unticked row and is downloaded last. The list is re-checked after an install and after a boot. Held back moves to the bottom.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-01">
       <description>
         <p>First public release.</p>

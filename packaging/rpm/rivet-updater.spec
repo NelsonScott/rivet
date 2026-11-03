@@ -14,7 +14,7 @@
 %global py3_shebang_flags s
 
 Name:           rivet-updater
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Fedora updates in one place, with the risky ones flagged
 
@@ -154,5 +154,12 @@ cd backend && HOME=$(mktemp -d) %{python3} -m unittest discover -s tests
 %{_datadir}/gnome-shell/extensions/%{ext_uuid}/
 
 %changelog
+* Tue Nov 03 2026 Scott Nelson <8241108+NelsonScott@users.noreply.github.com> - 0.2.0-1
+- A newer Fedora release shows as one unticked row; Update now downloads it last
+  and --release-reboot restarts into the upgrade
+- Re-check for updates once an install finishes and on the first window after a boot
+- Held back section moves below Other software and Home Assistant
+- QA harness runs on a private runtime dir so it cannot unmount the live document portal
+
 * Sun Nov 01 2026 Scott Nelson <8241108+NelsonScott@users.noreply.github.com> - 0.1.0-1
 - First package

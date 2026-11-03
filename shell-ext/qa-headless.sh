@@ -8,6 +8,7 @@
 # indicator menu over D-Bus and screenshots from inside the shell with Shell.Screenshot.
 # Produces $OUT/menu.png (menu open) and $OUT/bar.png (panel only).
 set -u
+. "$(dirname "$(readlink -f "$0")")/../app/qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-qa}
 mkdir -p "$OUT"
 
