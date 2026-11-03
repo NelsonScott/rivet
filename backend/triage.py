@@ -248,6 +248,11 @@ def deterministic(item: dict) -> dict:
     adv = item.get("advisory") or {}
     sev = adv.get("severity")
     typ = adv.get("type")
+    if item.get("op") == "release":
+        # the newer-Fedora row (release.py): its own words, never the model's
+        import release
+        v, r = release.verdict(item.get("release") or {"version": item.get("to")})
+        return {"verdict": v, "reasoning": r, "risk_raise": None, "_offline": True}
     if item.get("blocked_by") == "steam_running":
         v = "Held back: a running Steam is using this runtime."
         r = ("This Flatpak runtime is in use by the running Steam sandbox, so replacing it now "

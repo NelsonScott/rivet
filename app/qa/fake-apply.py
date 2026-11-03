@@ -18,6 +18,10 @@ RIVET_FAKE_SCENARIO picks the story:
               world of backend/fixtures/fake_held.py first on PATH. The first build tried
               (3.16.30) dies with the Xwayland-id journal line -> automatic rollback; the next
               one (3.16.31) stays up -> kept.
+  release     (2026-11-03) the ok stream, then the newer-Fedora download as rivet-apply's
+              `release` step (canned dnf5 system-upgrade lines) -> done ok with `release`
+              {version 45, downloaded}. --release-reboot 45: records the call in
+              $RIVET_STATE_DIR/release-reboot.calls and ends done ok WITHOUT rebooting.
   (any)       --other-update ID: a canned Other-software run for that row, done ok; the
               nginx image row always fails (2026-10-31 b; couchdb until 2026-11-01, when
               containers that hold data lost their Update button).
@@ -230,6 +234,22 @@ if "--verify-kmod" in sys.argv:
         time.sleep(0.1)
     sys.exit(0)
 
+if "--release-reboot" in sys.argv:
+    # the bridge's Restart now on a downloaded release: never reboots here, just says so
+    v = sys.argv[sys.argv.index("--release-reboot") + 1]
+    with open(os.path.join(os.environ.get("RIVET_STATE_DIR", "/tmp"), "release-reboot.calls"), "a") as fh:
+        fh.write("--release-reboot %s\n" % v)
+    for e in [
+        {"step": "release", "status": "progress", "pct": None, "msg": "Asking for permission\u2026", "log": None},
+        {"step": "release", "status": "start", "pct": None, "msg": "Restarting into the Fedora %s installer\u2026" % v,
+         "log": "pkexec dnf5 system-upgrade reboot -y"},
+        {"step": "done", "status": "ok", "pct": 100, "msg": None, "log": None, "reboot_required": True,
+         "kmod_verified": None, "summary": "Restarting now to install Fedora %s." % v,
+         "release": {"version": int(v), "downloaded": True, "rebooting": True}},
+    ]:
+        print(json.dumps(e), flush=True)
+    sys.exit(0)
+
 plan = json.load(open(sys.argv[sys.argv.index("--plan") + 1]))
 scenario = os.environ.get("RIVET_FAKE_SCENARIO", "ok")
 n = len(plan["items"])
@@ -265,6 +285,34 @@ def simple():
              "summary": "Finished with errors: %d package(s). %s A reboot is needed to finish." % (n, cause),
              "cause": cause, "error": None, "warnings": [],
              "results": {"dnf": {"planned": n, "installed": n, "missing": [], "leftover": []}}},
+        ]
+    elif scenario == "release" and any(i.startswith("release:") for i in plan["items"]):
+        # 2026-11-03: the newer Fedora in the plan, last, as rivet_apply.apply_release streams it
+        v = next(i for i in plan["items"] if i.startswith("release:")).split(":", 1)[1]
+        m = n - 1
+        evs += [
+            {"step": "install", "status": "ok", "pct": 100, "msg": "RPM transaction complete.", "log": None},
+            {"step": "release", "status": "start", "pct": 0, "msg": "Downloading Fedora %s\u2026" % v, "log": None},
+            {"step": "release", "status": "progress", "pct": None, "msg": "Leaving out 1 repo with no Fedora %s build yet: copr:copr.fedorainfracloud.org:someone:tool" % v, "log": None},
+            {"step": "release", "status": "progress", "pct": None, "msg": "Asking for permission\u2026", "log": None},
+            {"step": "release", "status": "progress", "pct": None, "msg": "dnf5 system-upgrade download \u2026",
+             "log": "pkexec dnf5 system-upgrade download --releasever=%s -y --disable-repo=copr:copr.fedorainfracloud.org:someone:tool" % v},
+            {"step": "release", "status": "progress", "pct": None, "msg": "Fedora %s is 3.1 GiB to download." % v,
+             "log": "Total size of inbound packages is 3.1 GiB. Need to download 3.1 GiB."},
+            {"step": "release", "status": "progress", "pct": 6, "msg": "[  120/1834] glibc-0:2.43-1.fc%s.x86_64" % v,
+             "log": "[  120/1834] glibc-0:2.43-1.fc%s.x86_64  100%% | 12.4 MiB/s | 2.3 MiB | 00m00s" % v},
+            {"step": "release", "status": "progress", "pct": 49, "msg": "[  900/1834] kernel-core-0:7.3.2-300.fc%s.x86_64" % v,
+             "log": "[  900/1834] kernel-core-0:7.3.2-300.fc%s.x86_64  100%% | 30.1 MiB/s | 61.0 MiB | 00m02s" % v},
+            {"step": "release", "status": "progress", "pct": 99, "msg": "[ 1834/1834] zlib-ng-compat-0:2.3.1-1.fc%s.x86_64" % v,
+             "log": "[ 1834/1834] zlib-ng-compat-0:2.3.1-1.fc%s.x86_64  100%% | 1.1 MiB/s | 0.1 MiB | 00m00s" % v},
+            {"step": "release", "status": "ok", "pct": 100, "msg": "Fedora %s is downloaded (3.1 GiB). Restart to install it." % v, "log": None},
+            {"step": "done", "status": "ok", "pct": 100, "log": None, "reboot_required": True, "kmod_verified": None,
+             "msg": "Applied %d package(s), Fedora %s downloaded. Restart to install Fedora %s." % (m, v, v),
+             "summary": "Applied %d package(s), Fedora %s downloaded. Restart to install Fedora %s." % (m, v, v),
+             "cause": None, "error": None, "warnings": [],
+             "results": {"dnf": {"planned": m, "installed": m, "missing": [], "leftover": []},
+                         "release": {"version": int(v), "downloaded": True, "status": "ok", "disabled_repos": ["copr:copr.fedorainfracloud.org:someone:tool"], "size": "3.1 GiB", "packages": 1834, "nvidia": True, "cause": None}},
+             "release": {"version": int(v), "downloaded": True, "status": "ok", "size": "3.1 GiB", "nvidia": True}},
         ]
     else:
         evs += [

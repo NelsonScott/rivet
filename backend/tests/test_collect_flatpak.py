@@ -66,7 +66,7 @@ def collect(world: dict, ops: list[dict]) -> tuple[dict, str]:
     env = dict(os.environ, PATH=f"{bindir}:/usr/bin:/bin", FAKE_WORLD=str(tmp / "world.json"),
                RIVET_FLATPAK_DRYRUN_FIXTURE=str(tmp / "ops.json"),
                RIVET_STATE_DIR=str(tmp / "state"), RIVET_CONFIG_DIR=str(tmp / "config"),
-               RIVET_NO_NOTIFY="1", RIVET_NO_ELSEWHERE="1")
+               RIVET_NO_NOTIFY="1", RIVET_NO_ELSEWHERE="1", RIVET_NO_RELEASE="1")
     cp = subprocess.run([sys.executable, str(BACKEND / "rivet_collect.py"), "--no-llm", "--quiet"],
                         env=env, capture_output=True, text=True, timeout=120)
     assert cp.returncode == 0, cp.stderr

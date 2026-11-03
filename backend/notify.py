@@ -31,6 +31,9 @@ def build_body(items: list[dict], flags: dict) -> tuple[str, str]:
         bits.append(f"{flags['security_count']} security")
     if flags.get("blocked_count"):
         bits.append(f"{flags['blocked_count']} blocked by Steam")
+    newer = next((i for i in items if i.get("op") == "release"), None)
+    if newer:
+        bits.append(f"{newer.get('display_name') or 'a new Fedora'} is out")
     return title, ", ".join(bits) if bits else "No reboot needed."
 
 

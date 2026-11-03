@@ -27,7 +27,7 @@
 # after rivet-apply exited.
 set -u
 OUT=${1:-/tmp/rivet-e2e}; mkdir -p "$OUT/shots"; shift || true
-SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix looks abuse abuse-noclaude second-instance}
+SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix looks abuse abuse-noclaude second-instance release}
 HERE=$(dirname "$(readlink -f "$0")")
 
 gnome-shell --headless --wayland --no-x11 --virtual-monitor 1280x860 > "$OUT/shell.log" 2>&1 &
@@ -120,6 +120,15 @@ for SC in $SCENARIOS; do
     # its buttons run qa/fake-apply.py --other-update, never a real npm / podman / HA call
     DRIVER=$HERE/qa/driver-other.js; LIMIT=95
   fi
+  if [ "$SC" = release ]; then
+    # 2026-11-03: the newer-Fedora row (fake-collect adds it from the real release.py), the
+    # selection rules, Update now with the release step last (fake-apply `release`), the
+    # "Ready for Fedora 45" result; Restart now is never clicked
+    DRIVER=$HERE/qa/driver-release.js; LIMIT=75
+    # the row has to be in state.json before the app starts (the demo serves the sample otherwise)
+    HOME="$QAHOME" RIVET_STATE_DIR="$QAHOME/.local/state/rivet" RIVET_FAKE_SCENARIO=release \
+      RIVET_NO_NOTIFY=1 python3 "$HERE/qa/fake-collect.py"
+  fi
   if [ "$SC" = held ]; then
     DRIVER=$HERE/qa/driver-held.js; LIMIT=110
     # the trial reads state.json from disk, so the fake collector runs once before the app
@@ -182,6 +191,12 @@ for SC in $SCENARIOS; do
   if [ "$SC" = abuse-noclaude ]; then
     n=$(grep -c "other fix: \|doctor diagnose: " "$LOG")
     echo "$SC: Fix it processes started: $n (want 0)"; [ "$n" = 0 ] || EXTRA=bad
+  fi
+  if [ "$SC" = release ]; then
+    n=$(grep -c "release reboot:" "$LOG")
+    echo "$SC: restarts into the installer started by the bridge: $n (want 0: the driver never clicks Restart now)"; [ "$n" = 0 ] || EXTRA=bad
+    [ -e "$QAHOME/.local/state/rivet/release-reboot.calls" ] && { echo "$SC: fake-apply --release-reboot was called"; EXTRA=bad; }
+    grep -q '\[QA\] release: FAIL' "$LOG" && EXTRA=bad
   fi
   if [ "$SC" = other-bulk ]; then
     n=$(grep -c "other restart: .*--ha-restart" "$LOG")

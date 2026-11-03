@@ -56,4 +56,6 @@ rivet-updater --demo                                    # serves app/ui/sample-s
   offers a reboot (`kmod_verified`).
 - Other software rows are rebuilt from state.json on apply; the UI never sends a
   command line. Containers that hold data never get an Update button.
+- A newer Fedora (`backend/release.py`) is one unticked dnf row; rivet-apply only
+  downloads it, last; `--release-reboot` is the one command that restarts the machine.
 - Looks (`app/ui/looks/`) only re-point CSS custom properties; see its README.

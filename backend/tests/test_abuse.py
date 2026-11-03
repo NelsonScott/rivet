@@ -429,7 +429,7 @@ def collect_fixture(fixture: dict) -> tuple[subprocess.CompletedProcess, dict, f
     t0 = time.monotonic()
     cp = subprocess.run([sys.executable, str(BACKEND / "rivet_collect.py"), "--fixture", str(fx), "--no-llm", "--quiet"],
                         capture_output=True, text=True, timeout=120,
-                        env=dict(os.environ, RIVET_STATE_DIR=str(sd), RIVET_NO_NOTIFY="1", RIVET_NO_ELSEWHERE="1"))
+                        env=dict(os.environ, RIVET_STATE_DIR=str(sd), RIVET_NO_NOTIFY="1", RIVET_NO_ELSEWHERE="1", RIVET_NO_RELEASE="1"))
     dt = time.monotonic() - t0
     return cp, json.loads((sd / "state.json").read_text()), dt
 
@@ -458,7 +458,7 @@ class AiOptIn(unittest.TestCase):
         cp = subprocess.run([sys.executable, str(BACKEND / "rivet_collect.py"), "--fixture", str(fx), "--quiet"],
                             capture_output=True, text=True, timeout=120,
                             env=dict(os.environ, RIVET_STATE_DIR=str(sd / "state"), RIVET_CONFIG_DIR=str(sd / "cfg"),
-                                     RIVET_CLAUDE_BIN=str(fake), RIVET_NO_NOTIFY="1", RIVET_NO_ELSEWHERE="1"))
+                                     RIVET_CLAUDE_BIN=str(fake), RIVET_NO_NOTIFY="1", RIVET_NO_ELSEWHERE="1", RIVET_NO_RELEASE="1"))
         self.assertEqual(cp.returncode, 0, cp.stderr)
         st = json.loads((sd / "state" / "state.json").read_text())
         self.assertTrue(st["groups"][0]["items"][0]["reasoning"], "the deterministic reason is always there")

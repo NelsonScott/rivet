@@ -173,7 +173,8 @@ class World:
         self.env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", FAKE_WORLD=str(self.path),
                         RIVET_STATE_DIR=str(self.state_dir), RIVET_CONFIG_DIR=str(self.tmp / "cfg"),
                         RIVET_FLATPAK_DRYRUN_FIXTURE=str(self.tmp / "ops.json"),
-                        RIVET_NO_NOTIFY="1", RIVET_HELD_POLL_S="0.05", RIVET_NO_ELSEWHERE="1")
+                        RIVET_NO_NOTIFY="1", RIVET_HELD_POLL_S="0.05", RIVET_NO_ELSEWHERE="1",
+                        RIVET_NO_RELEASE="1")
         assert shutil.which("flatpak", path=self.env["PATH"]) == str(self.bin / "flatpak")
         if not fresh:
             return

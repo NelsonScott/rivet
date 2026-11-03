@@ -1,5 +1,46 @@
 # Rivet — component contract (v1, 2026-09-15)
 
+> **Changed 2026-11-03: a newer Fedora release (all additive; `backend/release.py`).**
+> - **Collector.** Every check asks Fedora's release list (`https://fedoraproject.org/releases.json`)
+>   for the newest numbered release and compares it with `VERSION_ID`. A newer one is ONE more
+>   item in the `dnf` group, last: `{"id": "release:45", "source": "dnf", "name": "fedora-45",
+>   "display_name": "Fedora 45", "from": "44", "to": "45", "size_bytes": 0, "ref":
+>   "system-upgrade:45", "op": "release", "release": {version, current, missing_repos: [repo ids],
+>   checked_repos, unknown_repos, downloaded}, ...}` with the usual keys. Rules: `requires_reboot`
+>   true, so `risk: yellow`, `badge: reboot`; **`selected_default: false`** (the user ticks it).
+>   `notes_excerpt` is a fixed paragraph, `notes_url` the release notes; the verdict/reasoning are
+>   deterministic (`release.verdict`), never the model's. Counted in `summary.total` and the badge,
+>   part of the pending set (so the notification fires once, body "..., Fedora 45 is out").
+>   `missing_repos`: every enabled repo whose URL carries `$releasever` is probed once at the new
+>   version (one GET each, redirects followed: the metalink/mirrorlist itself, or
+>   `baseurl/repodata/repomd.xml`); 404/403/410 = missing, 2xx = ok, anything else = unknown.
+>   `downloaded`: a dnf5 offline transaction is waiting under `/usr/lib/sysimage/libdnf5/offline/`.
+>   No network, no Fedora (`VERSION_ID`), or any error: no row, never a failed check.
+>   `RIVET_NO_RELEASE=1` skips it; a `--fixture` with a `release` object replaces it.
+> - **UI.** The row renders like any dnf row (its own one-item cluster), size column blank; Select all,
+>   Safe only, Security only and the group checkbox never tick it; ticked by hand it shows a yellow
+>   banner ("runs last … asks before restarting"). `apply {items}` carries its id like any other.
+>   Progress step `release` ("Download Fedora 45") sits last in `STEP_ORDER`.
+> - **rivet-apply.** A `release:*` id in the plan is step `release`, after dnf/akmod/Flatpak/fwupd,
+>   and only when everything before it went through (else `release skip`, never an upgrade on a
+>   half-applied update): `dnf5 system-upgrade download --releasever=V -y --disable-repo=<each
+>   missing repo>` as root through `common.root_prefix()` (pkexec: "Asking for permission…" first),
+>   streamed as `release progress` lines (`pct` from dnf's `[n/total]` counter, "Fedora V is X to
+>   download" from its total line). It only downloads. `done` gains **`release: {version,
+>   downloaded, status, size, nvidia}`** (also `results.release` with `disabled_repos`, `packages`,
+>   `cause`), `reboot_required` true, summary "… Fedora 45 downloaded. Restart to install Fedora 45."
+>   Failures are a plain `cause`: prompt dismissed/refused, timeout (4 h), "would have to be
+>   removed (dnf says --allowerasing)", or dnf's first error line. `--resolve-only` skips it.
+> - **`rivet-apply --release-reboot V`** (bridge `restart {release: V}`): the ONE command in Rivet
+>   that restarts the machine, and only on the user's click. Refuses (`done fail`) unless an offline
+>   transaction for V is on disk; then `dnf5 system-upgrade reboot -y` as root. `done.release`
+>   carries `rebooting`. The app accepts it only for the version `done.release` of the current run
+>   downloaded, after its own confirmation dialog ("Restart and install Fedora 45?"), and shows a
+>   refusal as an error toast. Never logind for this path.
+> - QA: `backend/tests/test_release.py` (check, probe, row, apply, reboot; no network), selftest
+>   "release upgrade", `qa-e2e.sh release` (fake-collect adds the row from the real release.py,
+>   fake-apply plays the download; Restart now is never clicked), docs/QA-MATRIX.md row 9.
+
 > **Changed 2026-11-01 (f): opt-in Claude, local fonts, no author-only paths.**
 > - Settings `ai_triage` (bool, default false; Preferences "Explain and rate updates with Claude
 >   Code"). Off: `rivet-collect` never starts `claude` (triage verdicts are the deterministic ones,

@@ -4,6 +4,8 @@
 RIVET_FAKE_SCENARIO=held: the `held` group comes from the REAL collector run against the fake
 flatpak world (backend/fixtures/fake_held.py), so the row follows what try / keep / rollback
 did. Once 3.16.30 has been marked bad, "Flathub" publishes 3.16.31.
+RIVET_FAKE_SCENARIO=release (2026-11-03): the sample plus the newer-Fedora row, built by the
+REAL backend/release.py + rules from a canned check (Fedora 45 out, one repo without it).
 """
 import json, os, subprocess, sys, time
 here = os.path.dirname(os.path.abspath(__file__))
@@ -12,6 +14,20 @@ doc = json.load(open(os.path.join(here, "..", "ui", "sample-state.json")))
 doc["status"] = "ok"
 p = os.path.join(os.environ.get("RIVET_STATE_DIR") or os.path.expanduser("~/.local/state/rivet"), "state.json")
 os.makedirs(os.path.dirname(p), exist_ok=True)
+
+if os.environ.get("RIVET_FAKE_SCENARIO") == "release":
+    sys.path.insert(0, os.path.join(here, "..", "..", "backend"))
+    import release, rules, triage
+    row = release.item(release.check(fixture={"version": 45, "current": 44, "checked_repos": 14,
+                                              "missing_repos": ["copr:copr.fedorainfracloud.org:someone:tool"]}))
+    rules.apply_rules([row], steam_running=False)
+    d = triage.deterministic(row)
+    row["verdict"], row["reasoning"] = d["verdict"], d["reasoning"]
+    dnf = next(g for g in doc["groups"] if g["id"] == "dnf")
+    dnf["items"].append(row)
+    doc["summary"]["total"] += 1
+    doc["flags"]["reboot_required"] = True
+    doc["host"]["os"] = "Fedora Linux 44 (Workstation Edition)"
 
 if os.environ.get("RIVET_FAKE_SCENARIO") == "held":
     backend = os.path.join(here, "..", "..", "backend")

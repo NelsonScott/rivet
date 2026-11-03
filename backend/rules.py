@@ -70,6 +70,8 @@ def severity_norm(sev) -> str | None:
 
 
 def requires_reboot(item: dict) -> bool:
+    if item.get("op") == "release":
+        return True                   # a release upgrade installs offline, after a restart
     if item["source"] == "dnf":
         return bool(REBOOT_NAME_RE.match(item["name"]))
     if item["source"] == "fwupd":
@@ -158,7 +160,8 @@ def apply_rules(items: list[dict], *, steam_running: bool) -> dict:
         ):
             it["requires_reboot"] = True
             it["risk"] = raise_risk(it["risk"], "yellow")
-        it["selected_default"] = not it.get("blocked_by")
+        # a release upgrade is never part of a casual "Update now": the user ticks it
+        it["selected_default"] = not it.get("blocked_by") and it.get("op") != "release"
 
     return {
         "steam_running": steam_running,

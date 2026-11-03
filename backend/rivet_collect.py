@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import elsewhere as elsewhere_mod  # noqa: E402
 import holds  # noqa: E402
 import notify  # noqa: E402
+import release as release_mod  # noqa: E402
 import rules  # noqa: E402
 import sources  # noqa: E402
 import triage as triage_mod  # noqa: E402
@@ -180,23 +181,35 @@ def load_fixture(path: str) -> dict:
 
 
 def collect_all(fixture: dict | None, *, quiet: bool):
+    """(dnf items, flatpak items, fwupd items, steam running). A newer Fedora release
+    (release.py, 2026-11-03) is the LAST dnf item: one row, never ticked by default."""
     if fixture is not None:
+        rel = release_mod.check(fixture=fixture["release"]) if isinstance(fixture.get("release"), dict) else None
         return (
-            fixture.get("dnf", []),
+            list(fixture.get("dnf", [])) + ([release_mod.item(rel)] if rel else []),
             fixture.get("flatpak", []),
             fixture.get("fwupd", []),
             bool(fixture.get("steam_running", False)),
         )
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=5) as ex:
         f_dnf = ex.submit(sources.collect_dnf)
         f_fp = ex.submit(sources.collect_flatpak)
         f_fw = ex.submit(sources.collect_fwupd)
         f_st = ex.submit(sources.steam_running)
-        return f_dnf.result(), f_fp.result(), f_fw.result(), f_st.result()
+        f_rel = ex.submit(release_mod.check) if os.environ.get("RIVET_NO_RELEASE") != "1" else None
+        dnf_i = f_dnf.result()
+        rel = f_rel.result() if f_rel is not None else None
+        if rel:
+            log(f"release: Fedora {rel['version']} is out (this is {rel['current']}); "
+                f"{len(rel['missing_repos'])} of {rel['checked_repos']} repos missing it"
+                + (", already downloaded" if rel["downloaded"] else ""), quiet=quiet)
+            dnf_i = dnf_i + [release_mod.item(rel)]
+        return dnf_i, f_fp.result(), f_fw.result(), f_st.result()
 
 
 # Optional item keys (contract amendment 2026-09-21): written only when set.
-OPTIONAL_ITEM_KEYS = ["op", "scope", "origin"]
+# `release` (2026-11-03): the facts behind the newer-Fedora row (release.py).
+OPTIONAL_ITEM_KEYS = ["op", "scope", "origin", "release"]
 # Group `held` (contract amendment 2026-09-21b): refs pinned with `flatpak mask`.
 HELD_GROUP = ("held", "Held back", "pinned")
 HELD_ITEM_KEYS = ["held", "hold_state", "hold_reason", "held_since", "good_version",
@@ -310,7 +323,9 @@ def main(argv=None) -> int:
                 d = triage_mod.deterministic(it)
                 it["verdict"], it["reasoning"] = d["verdict"], d["reasoning"]
         else:
-            verdicts = triage_mod.triage(items, quiet=args.quiet, force=args.force_triage)
+            # the newer-Fedora row has no notes to read and its own fixed words: not the model's
+            verdicts = triage_mod.triage([i for i in items if not release_mod.is_release(i)],
+                                         quiet=args.quiet, force=args.force_triage)
             for it in items:
                 v = verdicts.get(it["id"]) or triage_mod.deterministic(it)
                 it["verdict"] = v["verdict"]

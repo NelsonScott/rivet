@@ -11,6 +11,7 @@
     rivet-apply --other-remove ID         # uninstall one UNUSED Home Assistant add-on row
     rivet-apply --ha-restart              # restart HA core, only when an integration waits for it
     rivet-apply --other-fix ID [--dry-run]  # Fix it on a failed row (claude -p, bounded tools)
+    rivet-apply --release-reboot VERSION   # restart into the downloaded release upgrade (see below)
 
 plan.json: {"items": ["dnf:kernel", "flatpak:runtime/org.gnome.Platform/x86_64/50", ...]}
 
@@ -30,7 +31,16 @@ in fact installed, and Rivet said the update had failed.
 
 RPMs go through dnf5daemon on the system bus (org.rpm.dnf.v0); Flatpaks through
 `flatpak update -y --noninteractive`; firmware through
-`fwupdmgr update -y --no-reboot-check`. This tool NEVER reboots.
+`fwupdmgr update -y --no-reboot-check`. This tool NEVER reboots, with ONE exception the
+user asks for by name: `--release-reboot` runs `dnf5 system-upgrade reboot`, which is how
+Fedora's own tooling restarts into a downloaded release upgrade (2026-11-03).
+
+A newer Fedora in the plan (`release:45`, the collector's release.py row) is step `release`,
+AFTER everything else: `dnf5 system-upgrade download --releasever=45 -y` as root (pkexec),
+streamed, with `--disable-repo` for every repo the collector found has no build for the new
+release yet. It only downloads; done then carries `release: {version, downloaded, ...}` and
+the app offers "Restart now", which is `--release-reboot`. If the rpm transaction before it
+failed, the release step is skipped: never an upgrade on top of a half-applied update.
 """
 from __future__ import annotations
 
@@ -1123,6 +1133,133 @@ def kmod_plan(dnf_items: list[dict], state: dict) -> tuple[str | None, str | Non
     return kver, (akmod.get("to") if akmod else None)
 
 
+# ---------------------------------------------------------------- release upgrade (2026-11-03)
+
+RELEASE_TIMEOUT_S = 4 * 3600          # a few GB on a slow mirror
+# dnf5's download counter: "[ 12/1834] libfoo-1.2.x86_64  100% | 2.3 MiB/s | ..."
+RELEASE_COUNT_RE = re.compile(r"^\[\s*(\d+)/(\d+)\]")
+RELEASE_SIZE_RE = re.compile(r"Total size of inbound packages is ([\d.,]+\s?[KMGT]i?B)", re.I)
+RELEASE_ERASE_HINT = re.compile(r"--allowerasing|conflict|problem", re.I)
+
+
+def release_cmd(version: int, missing_repos: list[str]) -> list[str]:
+    cmd = ["dnf5", "system-upgrade", "download", f"--releasever={version}", "-y"]
+    cmd += [f"--disable-repo={r}" for r in missing_repos]
+    return cmd
+
+
+def apply_release(em: Emitter, item: dict, *, resolve_only: bool) -> dict:
+    """Download the newer Fedora (step `release`), never install it: that is the reboot's job.
+
+    Returns {version, downloaded, status: ok|fail|skip, disabled_repos, size, packages,
+    nvidia, cause}. Root through common.root_prefix() (pkexec: the desktop's polkit dialog,
+    "Asking for permission…" first)."""
+    rel = item.get("release") or {}
+    try:
+        version = int(rel.get("version") or item.get("to"))
+    except (TypeError, ValueError):
+        em.emit("release", "fail", None, f"{item.get('id')}: no release version in state.json.", None)
+        return {"version": None, "downloaded": False, "status": "fail", "disabled_repos": [],
+                "size": None, "packages": None, "nvidia": akmod_installed(),
+                "cause": "The release row in state.json names no version; check for updates again."}
+    missing = [r for r in (rel.get("missing_repos") or []) if re.match(r"^[\w.:@+-]+$", str(r))]
+    res = {"version": version, "downloaded": False, "status": "ok", "disabled_repos": missing,
+           "size": None, "packages": None, "nvidia": akmod_installed(), "cause": None}
+    if resolve_only:
+        em.emit("release", "skip", None, f"--resolve-only: Fedora {version} not downloaded.", None)
+        res["status"] = "skip"
+        return res
+    em.emit("release", "start", 0, f"Downloading Fedora {version}…", None)
+    if missing:
+        em.emit("release", "progress", None,
+                f"Leaving out {len(missing)} repo{'s' if len(missing) > 1 else ''} with no Fedora "
+                f"{version} build yet: " + ", ".join(missing), None)
+    prefix = root_prefix()
+    cmd = prefix + release_cmd(version, missing)
+    if prefix[:1] == ["pkexec"]:
+        em.emit("release", "progress", None, "Asking for permission…", None)
+    em.emit("release", "progress", None, "dnf5 system-upgrade download …", " ".join(cmd))
+    try:
+        ls = LineStream(cmd, timeout=RELEASE_TIMEOUT_S)
+    except OSError as exc:
+        res.update(status="fail", cause=f"dnf5 could not be started: {exc}")
+        em.emit("release", "fail", None, res["cause"], None)
+        return res
+    last, errors = "", []
+    for raw in ls.lines():
+        for chunk in re.split(r"[\r\n]", raw):
+            line = chunk.strip()
+            if not line:
+                continue
+            last = line
+            pct = None
+            m = RELEASE_COUNT_RE.match(line)
+            if m and int(m.group(2)):
+                res["packages"] = int(m.group(2))
+                pct = min(99, int(100 * int(m.group(1)) / int(m.group(2))))
+            m = RELEASE_SIZE_RE.search(line)
+            if m:
+                res["size"] = m.group(1)
+                em.emit("release", "progress", None, f"Fedora {version} is {m.group(1)} to download.", line[:500])
+                continue
+            if re.match(r"^(Error|Problem|Failed|Cannot)", line, re.I) or "error:" in line.lower():
+                errors.append(line)
+            em.emit("release", "progress", pct, line[:200], line[:500])
+    rc = 124 if ls.timed_out else (ls.returncode if ls.returncode is not None else 1)
+    if rc == 0:
+        res["downloaded"] = True
+        size = f" ({res['size']})" if res["size"] else ""
+        em.emit("release", "ok", 100, f"Fedora {version} is downloaded{size}. Restart to install it.", None)
+        return res
+    refusal = root_refusal(prefix, rc, last)
+    if refusal:
+        cause = f"Fedora {version} was not downloaded: {refusal}."
+    elif rc == 124:
+        cause = f"The Fedora {version} download timed out after {RELEASE_TIMEOUT_S // 3600} h and was stopped."
+    elif any(RELEASE_ERASE_HINT.search(e) for e in errors) or RELEASE_ERASE_HINT.search(last):
+        cause = (f"dnf could not work out the Fedora {version} upgrade: some installed package has no "
+                 f"Fedora {version} build and would have to be removed (dnf says --allowerasing). "
+                 "Fix it can show which one.")
+    else:
+        first = errors[0] if errors else last
+        cause = f"dnf5 system-upgrade download exited {rc}" + (f": {first[:200]}" if first else ".")
+    res.update(status="fail", cause=cause)
+    em.emit("release", "fail", None, cause, None, error=(errors[0] if errors else last) or None)
+    return res
+
+
+def run_release_reboot(em: Emitter, version: int) -> int:
+    """`dnf5 system-upgrade reboot`: the one command here that restarts the machine.
+
+    Only with a downloaded transaction on disk (release.offline_staged), only as root through
+    the polkit prompt, and only because the user clicked Restart now on the result screen."""
+    import release
+    if not release.offline_staged(version):
+        msg = (f"Nothing to restart into: Fedora {version} is not downloaded (dnf5 has no offline "
+               "transaction). Run the upgrade again.")
+        em.done("fail", reboot_required=False, kmod_verified=None, summary=msg, cause=msg,
+                release={"version": version, "downloaded": False, "rebooting": False})
+        return 1
+    prefix = root_prefix()
+    cmd = prefix + ["dnf5", "system-upgrade", "reboot", "-y"]
+    if prefix[:1] == ["pkexec"]:
+        em.emit("release", "progress", None, "Asking for permission…", None)
+    em.emit("release", "start", None, f"Restarting into the Fedora {version} installer…", " ".join(cmd))
+    rc, last = stream_lines(cmd, em, "release", timeout=300)
+    refusal = root_refusal(prefix, rc, last)
+    if rc == 0:
+        # the machine is going down; the app may never read this line
+        em.done("ok", reboot_required=True, kmod_verified=None,
+                summary=f"Restarting now to install Fedora {version}.",
+                release={"version": version, "downloaded": True, "rebooting": True})
+        return 0
+    cause = (f"Not restarted: {refusal}." if refusal
+             else f"dnf5 system-upgrade reboot exited {rc}" + (f": {last[:200]}" if last else "."))
+    em.done("fail", reboot_required=True, kmod_verified=None, summary=cause, cause=cause,
+            release={"version": version, "downloaded": True, "rebooting": False})
+    return 1
+
+
 def run_real(em: Emitter, plan_ids: list[str], *, resolve_only: bool,
              state: dict | None = None) -> int:
     state = load_state() if state is None else state
@@ -1135,7 +1272,8 @@ def run_real(em: Emitter, plan_ids: list[str], *, resolve_only: bool,
                 cause="None of the selected updates is in the current update list; check again.")
         return 1
 
-    dnf_items = [i for i in items if i["source"] == "dnf"]
+    rel_items = [i for i in items if i.get("op") == "release"]      # the newer-Fedora row
+    dnf_items = [i for i in items if i["source"] == "dnf" and i.get("op") != "release"]
     fp_items = [i for i in items if i["source"] == "flatpak"]
     fw_items = [i for i in items if i["source"] == "fwupd"]
     reboot = any(i.get("requires_reboot") for i in items)
@@ -1222,6 +1360,24 @@ def run_real(em: Emitter, plan_ids: list[str], *, resolve_only: bool,
             ok = False
             causes.append("fwupd could not stage "
                           + ", ".join(results["fwupd"]["failed_names"][:4]) + ".")
+    release_res = None
+    if rel_items:
+        # last of all, and never on top of a failed rpm transaction
+        v = rel_items[0].get("release", {}).get("version") or rel_items[0].get("to")
+        dnf_failed = bool(dnf_items) and (results.get("dnf") or {}).get("installed", 0) < len(dnf_items)
+        if not ok or dnf_failed:
+            em.emit("release", "skip", None,
+                    f"Fedora {v} was not downloaded: the updates before it did not all go through. "
+                    "Fix those first, then run the upgrade on its own.", None)
+            release_res = {"version": v, "downloaded": False, "status": "skip", "disabled_repos": [],
+                           "size": None, "packages": None, "nvidia": akmod_installed(),
+                           "cause": "the updates before it did not all go through"}
+        else:
+            release_res = apply_release(em, rel_items[0], resolve_only=resolve_only)
+            if release_res["status"] == "fail":
+                ok = False
+                causes.append(release_res["cause"])
+        results["release"] = release_res
 
     parts = []
     if dnf_items:
@@ -1233,12 +1389,15 @@ def run_real(em: Emitter, plan_ids: list[str], *, resolve_only: bool,
         parts.append(f"{results['flatpak']['ok']} Flatpak(s)")
     if fw_items:
         parts.append(f"{results['fwupd']['ok']} firmware update(s)")
+    if release_res and release_res["downloaded"]:
+        parts.append(f"Fedora {release_res['version']} downloaded")
     # 2026-11-01 abuse pass: "a reboot is needed" only for what actually landed (a cancelled
     # password prompt planned a kernel, installed nothing, and still said "restart to finish")
     if reboot and not resolve_only:
         gone = set((results.get("dnf") or {}).get("missing") or [])
         reboot = any(i.get("requires_reboot") and (
-            (i["source"] == "dnf" and i["name"] not in gone)
+            (i.get("op") == "release" and release_res is not None and release_res["downloaded"])
+            or (i["source"] == "dnf" and i.get("op") != "release" and i["name"] not in gone)
             or (i["source"] == "fwupd" and (results.get("fwupd") or {}).get("ok"))
             or i["source"] == "flatpak") for i in items)
     status = "fail" if not ok else "warn" if warnings else "ok"
@@ -1256,11 +1415,16 @@ def run_real(em: Emitter, plan_ids: list[str], *, resolve_only: bool,
         summary = "Applied " + ", ".join(parts) + "."
         if warnings:
             summary += " " + " ".join(warnings)
-    if reboot and status != "warn":
+    if release_res and release_res["downloaded"] and status != "fail":
+        summary += f" Restart to install Fedora {release_res['version']}."
+    elif reboot and status != "warn":
         summary += " A reboot is needed to finish."
+    extra = {}
+    if release_res is not None:
+        extra["release"] = {k: release_res[k] for k in ("version", "downloaded", "status", "size", "nvidia")}
     em.done(status, reboot_required=reboot, kmod_verified=kmod_verified, summary=summary,
             cause=(causes[0] if causes else warnings[0] if warnings else None),
-            error=error, warnings=warnings, results=results)
+            error=error, warnings=warnings, results=results, **extra)
     return 0 if ok else 1
 
 
@@ -1303,7 +1467,8 @@ def run_dry(em: Emitter, plan_ids: list[str], *, fast: bool = False) -> int:
              "requires_reboot": True, "size_bytes": 17_256, "blocked_by": None},
         ]
 
-    dnf_items = [i for i in items if i["source"] == "dnf"]
+    rel_items = [i for i in items if i.get("op") == "release"]
+    dnf_items = [i for i in items if i["source"] == "dnf" and i.get("op") != "release"]
     fp_items = [i for i in items if i["source"] == "flatpak"]
     fw_items = [i for i in items if i["source"] == "fwupd"]
     kver = "7.2.5-200.fc44.x86_64"
@@ -1365,6 +1530,24 @@ def run_dry(em: Emitter, plan_ids: list[str], *, fast: bool = False) -> int:
         em.emit("fwupd", "ok", 100,
                 f"{it['display_name']} staged; it applies on the next boot.", None)
 
+    release = None
+    if rel_items:
+        # the newer Fedora, last: a canned system-upgrade download (2026-11-03)
+        v = (rel_items[0].get("release") or {}).get("version") or rel_items[0].get("to") or 45
+        em.emit("release", "start", 0, f"Downloading Fedora {v}…", None)
+        em.emit("release", "progress", None, "dnf5 system-upgrade download …",
+                f"pkexec dnf5 system-upgrade download --releasever={v} -y")
+        pause(0.2)
+        em.emit("release", "progress", None, f"Fedora {v} is 3.1 GiB to download.",
+                "Total size of inbound packages is 3.1 GiB. Need to download 3.1 GiB.")
+        for n, name in ((120, "glibc-2.43-1.fc45.x86_64"), (900, "kernel-core-7.3.2-300.fc45.x86_64"),
+                        (1834, "zlib-ng-compat-2.3.1-1.fc45.x86_64")):
+            pause(0.2)
+            em.emit("release", "progress", min(99, 100 * n // 1834), f"[{n:5d}/1834] {name}",
+                    f"[{n:5d}/1834] {name}  100% | 12.4 MiB/s | 1.2 MiB | 00m00s")
+        em.emit("release", "ok", 100, f"Fedora {v} is downloaded (3.1 GiB). Restart to install it.", None)
+        release = {"version": v, "downloaded": True, "status": "ok", "size": "3.1 GiB", "nvidia": needs_kmod or akmod_installed()}
+
     reboot = any(i.get("requires_reboot") for i in items)
     parts = []
     if dnf_items:
@@ -1374,13 +1557,19 @@ def run_dry(em: Emitter, plan_ids: list[str], *, fast: bool = False) -> int:
         parts.append(f"{len(live_fp)} Flatpak(s)")
     if fw_items:
         parts.append(f"{len(fw_items)} firmware update(s)")
+    if release:
+        parts.append(f"Fedora {release['version']} downloaded")
     summary = "Applied " + ", ".join(parts) + "."
     skipped = [i for i in fp_items if i.get("blocked_by")]
     if skipped:
         summary += f" {len(skipped)} skipped while Steam is running."
-    if reboot:
+    if release:
+        summary += f" Restart to install Fedora {release['version']}."
+    elif reboot:
         summary += " A reboot is needed to finish."
     results = {}
+    if release:
+        results["release"] = release
     if dnf_items:
         results["dnf"] = {"planned": len(dnf_items), "installed": len(dnf_items),
                           "missing": [], "leftover": []}
@@ -1390,7 +1579,7 @@ def run_dry(em: Emitter, plan_ids: list[str], *, fast: bool = False) -> int:
     if fw_items:
         results["fwupd"] = {"ok": len(fw_items), "failed": 0, "failed_names": []}
     em.done("ok", reboot_required=reboot, kmod_verified=kmod_verified, summary=summary,
-            results=results)
+            results=results, **({"release": release} if release else {}))
     return 0
 
 
@@ -1429,6 +1618,9 @@ def main(argv=None) -> int:
     ap.add_argument("--other-fix", metavar="ID",
                     help="Fix it on a failed Other-software row: a bounded claude -p diagnosis "
                          "(with --dry-run: canned evidence, prompt + tool budget asserted, no claude)")
+    ap.add_argument("--release-reboot", type=int, metavar="VERSION",
+                    help="restart into the downloaded Fedora VERSION upgrade (dnf5 system-upgrade "
+                         "reboot, as root); the ONE command here that reboots, on the user's click")
     ap.add_argument("--fix-tool", nargs=2, metavar=("VERB", "ID"),
                     help="one tool of a Fix it run (state|logs|retry|restart|reload); only inside it")
     args = ap.parse_args(argv)
@@ -1452,6 +1644,8 @@ def main(argv=None) -> int:
         return other_fix.run(em, args.other_fix, load_state(), dry=args.dry_run)
     if args.verify_kmod is not None:
         return run_verify_kmod(em, args.verify_kmod or None)
+    if args.release_reboot is not None:
+        return run_release_reboot(em, args.release_reboot)
     if args.try_held or args.verify_held or args.keep_held or args.rollback_held:
         import held_ops
         import holds

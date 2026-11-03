@@ -657,6 +657,57 @@ def run():
     check(b._procs == [] and len(dones) == 1, "the child is still drained to EOF and released, no second done")
     del os.environ["RIVET_APPLY_CMD"]
 
+    # ------------------------------------------------------- release upgrade (2026-11-03)
+    print("\nrelease upgrade: done.release is remembered, Restart now runs --release-reboot, refusals surface:")
+    fakerel = os.path.join(TMP, "fake-release.py")
+    with open(fakerel, "w") as fh:
+        fh.write(
+            "import json, os, sys\n"
+            "a = sys.argv[1:]\n"
+            "open(os.path.join(%r, 'release-calls.log'), 'a').write(' '.join(a) + '\\n')\n"
+            "def ev(**k): print(json.dumps(k), flush=True)\n"
+            "if a[0] == '--release-reboot':\n"
+            "    if os.environ.get('FAKE_RELEASE_REFUSE'):\n"
+            "        ev(step='done', status='fail', summary='x', cause='Not restarted: the permission prompt was dismissed, so nothing ran.', release={'version': 45, 'downloaded': True, 'rebooting': False}); sys.exit(1)\n"
+            "    ev(step='release', status='start', msg='Restarting into the Fedora 45 installer')\n"
+            "    ev(step='done', status='ok', summary='Restarting now to install Fedora 45.', release={'version': 45, 'downloaded': True, 'rebooting': True}); sys.exit(0)\n"
+            "ev(step='install', status='ok', pct=100, msg='RPM transaction complete.')\n"
+            "ev(step='release', status='ok', pct=100, msg='Fedora 45 is downloaded (3.1 GiB). Restart to install it.')\n"
+            "ev(step='done', status='ok', reboot_required=True, kmod_verified=None, summary='Applied 1 package(s), Fedora 45 downloaded. Restart to install Fedora 45.', results={}, release={'version': 45, 'downloaded': True, 'status': 'ok', 'size': '3.1 GiB', 'nvidia': True})\n"
+            % TMP)
+    os.environ["RIVET_APPLY_CMD"] = "%s %s" % (sys.executable, fakerel)
+    out = []
+    b = U.Bridge(out.append)
+    b.handle(json.dumps({"cmd": "restart", "release": 45}))
+    check(any(m.get("type") == "error" and "was not downloaded in this run" in m["msg"] for m in out),
+          "Restart now with a release nothing downloaded is refused (%s)" % [m.get("msg") for m in out if m.get("type") == "error"])
+    out.clear()
+    b.handle(json.dumps({"cmd": "apply", "items": ["dnf:curl", "release:45"]}))
+    wait_for(lambda: any(m.get("type") == "progress" and m["event"].get("step") == "done" for m in out) and not b.applying, 4000)
+    check(b.last_release == {"version": 45, "downloaded": True, "status": "ok", "size": "3.1 GiB", "nvidia": True},
+          "done.release of the run is remembered (%s)" % (b.last_release,))
+    calls = lambda: open(os.path.join(TMP, "release-calls.log")).read().strip().split("\n")
+    out.clear()
+    b._do_release_reboot(False, 45)
+    check(not any(c.startswith("--release-reboot") for c in calls()), "a cancelled confirmation runs nothing")
+    b._do_release_reboot(True, 45)
+    wait_for(lambda: b._procs == [], 4000)
+    check(calls()[-1] == "--release-reboot 45", "the confirmed restart runs rivet-apply --release-reboot 45 (%s)" % calls()[-1])
+    check(not any(m.get("type") == "error" for m in out), "a done ok (the machine is going down) raises no error")
+    out.clear()
+    os.environ["FAKE_RELEASE_REFUSE"] = "1"
+    b._do_release_reboot(True, 45)
+    wait_for(lambda: any(m.get("type") == "error" for m in out), 4000)
+    del os.environ["FAKE_RELEASE_REFUSE"]
+    check(any(m.get("type") == "error" and m["msg"] == "Not restarted: the permission prompt was dismissed, so nothing ran" for m in out),
+          "a refused restart comes back as its cause (%s)" % [m.get("msg") for m in out])
+    out.clear()
+    b.handle(json.dumps({"cmd": "restart", "release": 46}))
+    check(any(m.get("type") == "error" and "Fedora 46 was not downloaded" in m["msg"] for m in out),
+          "a different version than the run downloaded is refused")
+    check(not b.applying and b._procs == [], "nothing left running")
+    del os.environ["RIVET_APPLY_CMD"]
+
     # ------------------------------------------------------- other software (2026-10-31 b)
     print("\nother software: otherUpdate runs rivet-apply --other-update ID, streams type 'other':")
     fakeo = os.path.join(TMP, "fake-other.py")

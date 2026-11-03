@@ -239,7 +239,8 @@
   /* ------------------------------------------------------------------ */
   /* Incoming: apply progress events                                     */
   /* ------------------------------------------------------------------ */
-  const STEP_ORDER = ['download', 'install', 'akmod', 'flatpak', 'fwupd', 'verify'];
+  // `release` (2026-11-03): the newer-Fedora download, last of all (CONTRACT "Release upgrade")
+  const STEP_ORDER = ['download', 'install', 'akmod', 'flatpak', 'fwupd', 'verify', 'release'];
   const STEP_LABEL = {
     download: 'Download',
     install: 'Install packages',
@@ -247,23 +248,29 @@
     flatpak: 'Update Flatpaks',
     fwupd: 'Firmware',
     verify: 'Verify',
+    release: 'Download the new Fedora',
   };
+  function stepLabel(id) {
+    if (id === 'release') { const r = releaseItem(); return r ? `Download Fedora ${r.to}` : STEP_LABEL.release; }
+    return STEP_LABEL[id] || id;
+  }
 
   function planSteps(ids) {
     const items = ids.map(byId).filter(Boolean);
     const has = (src) => items.some(i => i.source === src);
-    const kmod = items.some(i => /^kernel/.test(i.name) || /^akmod-|^kmod-/.test(i.name));
+    const kmod = items.some(i => !isRelease(i) && (/^kernel/.test(i.name) || /^akmod-|^kmod-/.test(i.name)));
     const want = new Set(['download', 'verify']);
-    if (has('dnf')) want.add('install');
+    if (items.some(i => i.source === 'dnf' && !isRelease(i))) want.add('install');
     if (kmod) want.add('akmod');
     if (has('flatpak')) want.add('flatpak');
     if (has('fwupd')) want.add('fwupd');
+    if (items.some(isRelease)) want.add('release');
     return STEP_ORDER.filter(s => want.has(s));
   }
 
   function newApply(ids) {
     const steps = planSteps(ids).map(id => ({
-      id, label: STEP_LABEL[id], state: 'pending', pct: null, detail: '',
+      id, label: stepLabel(id), state: 'pending', pct: null, detail: '',
       warn: id === 'akmod',
     }));
     const byStep = {};
@@ -273,7 +280,7 @@
 
   function ensureStep(a, id) {
     if (a.byId[id]) return a.byId[id];
-    const s = { id, label: STEP_LABEL[id] || id, state: 'pending', pct: null, detail: '', warn: id === 'akmod' };
+    const s = { id, label: stepLabel(id), state: 'pending', pct: null, detail: '', warn: id === 'akmod' };
     a.byId[id] = s;
     // keep canonical order
     const want = STEP_ORDER.indexOf(id);
@@ -433,6 +440,12 @@
 
   function isBlocked(it) { return !!it.blocked_by; }
   function selectable(it) { return !isBlocked(it); }
+  // The newer-Fedora row (collector release.py, `op: "release"`): shown with the dnf rows,
+  // ticked only by hand (never by Select all / Safe only / Security only), applied last.
+  function isRelease(it) { return !!it && it.op === 'release'; }
+  function releaseItem() { return allItems().find(isRelease) || null; }
+  // what the bulk selectors and the "all on" checkboxes reason about
+  function sweepable(it) { return selectable(it) && !isRelease(it); }
   function effRisk(it) {
     if (state.settings.red_includes_reboot && it.requires_reboot && it.risk !== 'red') return 'red';
     return it.risk || 'green';
@@ -449,9 +462,9 @@
   const BADGE_TEXT = { security: 'SECURITY', reboot: 'REBOOT', rebuild: 'REBUILD', blocked: 'BLOCKED' };
 
   function selectSafe() {
-    state.selected = new Set(allItems().filter(it => selectable(it) && (effRisk(it) !== 'red' || isCritical(it))).map(it => it.id));
+    state.selected = new Set(allItems().filter(it => sweepable(it) && (effRisk(it) !== 'red' || isCritical(it))).map(it => it.id));
   }
-  function selectAll() { state.selected = new Set(allItems().filter(selectable).map(it => it.id)); }
+  function selectAll() { state.selected = new Set(allItems().filter(sweepable).map(it => it.id)); }
   // "Security" = carries a security advisory (any severity), or is badged as one.
   // Not the badge alone: a kernel with a security advisory is badged REBOOT (contract
   // badge precedence), and the user still means it with "all security updates".
@@ -711,7 +724,7 @@
     const sel = [...state.selected].map(byId).filter(Boolean);
     const selSize = sel.reduce((s, it) => s + (it.size_bytes || 0), 0);
     const totalSize = (state.doc.summary && state.doc.summary.total_bytes) || all.reduce((s, it) => s + (it.size_bytes || 0), 0);
-    const pool = all.filter(selectable);
+    const pool = all.filter(sweepable);
     const allOn = pool.length && pool.every(it => state.selected.has(it.id));
     const anyOn = pool.some(it => state.selected.has(it.id));
     const selReboot = sel.some(it => it.requires_reboot);
@@ -739,7 +752,7 @@
         ? clustersOf(g.id).map(c => ({ c, info: clusterInfo(c), hit: c.members.filter(matches) })).filter(x => x.hit.length) : null;
       const items = clustered ? clustered.reduce((a, x) => a.concat(x.hit), []) : sortItems((g.items || []).filter(matches));
       if (!items.length) continue;
-      const pick = items.filter(selectable);
+      const pick = items.filter(sweepable);
       const gAll = pick.length && pick.every(it => state.selected.has(it.id));
       const gAny = pick.some(it => state.selected.has(it.id));
       const gBlocked = items.some(isBlocked);
@@ -1336,6 +1349,12 @@
     return text ? `<span class="badge ${cls}">${esc(text)}</span>` : '';
   }
   const KERNEL_BANNER = `<div class="banner yellow"><span class="ic">⚠</span><span>Kernel + NVIDIA akmod: the NVIDIA module must rebuild before reboot. Rivet waits for it and verifies it.</span></div>`;
+  function releaseBanner(it) {
+    const r = it.release || {};
+    const v = esc(it.to);
+    if (r.downloaded) return `<div class="banner yellow"><span class="ic">⚠</span><span>Fedora ${v} is already downloaded. Running it again only checks the download, then offers the restart.</span></div>`;
+    return `<div class="banner yellow"><span class="ic">⚠</span><span>Fedora ${v} runs last: Rivet applies the other updates, downloads the release while you keep working, then asks before restarting into the installer (20 to 60 minutes with no desktop).</span></div>`;
+  }
 
   function renderRow(it) {
     const blocked = isBlocked(it);
@@ -1344,15 +1363,17 @@
     const risk = effRisk(it);
     const label = riskLabel(it);
     const cve = it.advisory && /^CVE-/.test(it.advisory.id) ? ' · ' + it.advisory.id : '';
-    let html = `<div class="row ${blocked ? 'blocked' : ''} ${open ? 'open' : ''}" data-action="expand" data-id="${esc(it.id)}" role="button" aria-expanded="${open}">
-      <span class="cb ${on ? 'on' : ''} ${blocked ? 'disabled' : ''}" data-action="toggle-row" data-id="${esc(it.id)}" role="checkbox" aria-checked="${on}" tabindex="0" title="${blocked ? 'Blocked while Steam runs' : 'Include in this run'}"></span>
+    const release = isRelease(it);
+    let html = `<div class="row ${blocked ? 'blocked' : ''} ${open ? 'open' : ''} ${release ? 'release' : ''}" data-action="expand" data-id="${esc(it.id)}" role="button" aria-expanded="${open}">
+      <span class="cb ${on ? 'on' : ''} ${blocked ? 'disabled' : ''}" data-action="toggle-row" data-id="${esc(it.id)}" role="checkbox" aria-checked="${on}" tabindex="0" title="${blocked ? 'Blocked while Steam runs' : release ? 'Include the release upgrade in this run (it runs last)' : 'Include in this run'}"></span>
       <span class="risk ${risk}" title="${esc(label)}"></span>
       <div class="body"><div class="hd"><span class="name">${esc(it.display_name || it.name)}</span><span class="ver">${esc(it.from)} → ${esc(it.to)}${esc(cve)}</span></div>
         <div class="verdict">${esc(it.verdict || '')}</div></div>
       ${badgeHtml({ crit: isCritical(it), risk, badge: it.badge })}
-      <span class="size">${fmtBytes(it.size_bytes)}</span>${svgChev}</div>`;
+      <span class="size" ${release ? 'title="The exact size is known once the download starts"' : ''}>${release ? '' : fmtBytes(it.size_bytes)}</span>${svgChev}</div>`;
     if (open) html += renderDetails(it, label, null);
     if (!blocked && it.name === 'kernel' && flags().akmod_nvidia_pending) html += KERNEL_BANNER;
+    if (release && on) html += releaseBanner(it);
     return html;
   }
 
@@ -1462,10 +1483,12 @@
       return `<div class="step ${st} ${s.warn ? 'warn' : ''} ${s.warned ? 'warned' : ''}"><span class="ic">${ic}</span>
         <div><div class="t">${esc(s.label)}${st === 'active' ? '…' : ''}</div>${s.detail ? `<div class="d">${esc(s.detail)}</div>` : ''}</div>${pct}</div>`;
     }).join('');
-    const tools = a.steps.map(s => ({ download: 'dnf5', install: 'dnf5', akmod: 'akmods', flatpak: 'flatpak', fwupd: 'fwupd', verify: 'modinfo' })[s.id] || s.id)
+    const tools = a.steps.map(s => ({ download: 'dnf5', install: 'dnf5', akmod: 'akmods', flatpak: 'flatpak', fwupd: 'fwupd', verify: 'modinfo', release: 'dnf5 system-upgrade' })[s.id] || s.id)
       .filter((v, i, arr) => arr.indexOf(v) === i).join(' · ');
     const note = a.byId.akmod
       ? '⚠ Rivet will not offer a restart until the NVIDIA module for the new kernel has been built and verified.'
+      : a.byId.release
+      ? 'The new Fedora is only downloaded here. Nothing restarts until you say so.'
       : 'You can keep using the computer while this runs.';
     return `<div class="progress"><i style="width:${Math.round(overall * 100)}%"></i></div>
       <div class="applying"><div class="center">
@@ -1512,11 +1535,14 @@
     const n = a.planned.length;
     const R = r.results || {};
     const someLanded = !!((R.dnf && R.dnf.installed) || (R.flatpak && R.flatpak.ok) || (R.fwupd && R.fwupd.ok));
+    // the newer Fedora is downloaded and waits for the restart (rivet-apply done.release)
+    const rel = r.release && r.release.downloaded ? r.release : null;
 
     // 1. one plain sentence: what happened
     let cause;
     if (failed) cause = r.cause || r.summary || 'Something went wrong; the details below have the tool output.';
     else if (warned) cause = r.cause || (r.warnings || [])[0] || r.summary || '';
+    else if (rel) cause = `${plural(n - 1, 'update')} applied. Fedora ${esc(rel.version)} downloaded.`;
     else cause = `${plural(n, 'update')} applied.`;
 
     // 2. what succeeded vs failed
@@ -1527,7 +1553,11 @@
 
     // 3. reboot: needed? safe?
     let rb, rbCls = '';
-    if (kmodBad) {
+    if (rel && !kmodBad) {
+      rb = `Fedora ${rel.version} is downloaded${rel.size ? ` (${rel.size})` : ''}. Restart to install it: the screen shows text progress for 20 to 60 minutes, then the computer comes back on Fedora ${rel.version}.`
+        + (rel.nvidia ? ' The NVIDIA module rebuilds on that first start, which adds a few minutes.' : '');
+      rbCls = failed ? '' : 'good';
+    } else if (kmodBad) {
       rb = 'Do NOT restart yet: the NVIDIA kernel module could not be verified for the new kernel, and you would boot without a display driver.'; rbCls = 'bad';
     } else if (reboot && failed && someLanded) {
       rb = 'The parts that did install need a restart to take effect.'
@@ -1558,8 +1588,10 @@
     // "Fix it" = ask Claude (read-only) what happened and what to do; it proposes a fix
     // that runs only on a second click. Check again merely re-runs the collector.
     const fixBtn = (cls) => noClaude() ? noClaudeNote() : `<button class="btn ${cls}" data-action="fix-it" title="Ask Claude to look into it and propose a fix">Fix it</button>`;
-    const restartBtns = `<button class="btn primary" data-action="restart-now" ${kmodBad ? 'disabled title="Blocked: the NVIDIA module was not verified"' : ''}>Restart now</button><button class="btn" data-action="restart-later">Later</button>`;
-    const actions = failed
+    const restartBtns = `<button class="btn primary" data-action="restart-now" ${rel ? `data-release="${esc(rel.version)}"` : ''} ${kmodBad ? 'disabled title="Blocked: the NVIDIA module was not verified"' : rel ? `title="Restart into the Fedora ${esc(rel.version)} installer"` : ''}>Restart now</button><button class="btn" data-action="restart-later">Later</button>`;
+    const actions = failed && rel
+      ? `${restartBtns}<button class="btn" data-action="back-to-list">Back to updates</button>${fixBtn('')}`
+      : failed
       ? `<button class="btn" data-action="back-to-list">Back to updates</button><button class="btn" data-action="check-now">Check again</button>${fixBtn('primary')}`
       : kmodBad ? `${restartBtns}${fixBtn('primary')}`
       : reboot ? restartBtns + (warned ? fixBtn('') : '')
@@ -1567,7 +1599,7 @@
     const tone = failed || kmodBad ? 'bad' : warned ? 'warn' : '';
     const title = failed ? (someLanded ? 'Some updates failed' : 'Update failed')
       : kmodBad ? 'Applied — do not reboot yet'
-      : warned ? 'Updated, with a warning' : 'All done';
+      : warned ? 'Updated, with a warning' : rel ? `Ready for Fedora ${esc(rel.version)}` : 'All done';
     return `<div class="hero result ${tone}"><div class="inner">
       <div class="ring ${tone}">${failed ? '!' : kmodBad ? '⚠' : warned ? '!' : '✓'}</div>
       <h1>${title}</h1>
@@ -1874,14 +1906,14 @@
     'select-safe': () => { state.menuOpen = false; if (state.view === 'updates') selectSafe(); },
     'select-security': () => { state.menuOpen = false; if (state.view === 'updates' && securityCount()) selectSecurity(); },
     'select-all-global': () => {
-      const pool = allItems().filter(selectable);
+      const pool = allItems().filter(sweepable);
       const on = pool.length && pool.every(it => state.selected.has(it.id));
       state.selected = new Set(on ? [] : pool.map(it => it.id));
     },
     'select-group': (t) => {
       const g = groups().find(x => x.id === t.dataset.group);
       if (!g) return;
-      const pool = (g.items || []).filter(selectable);
+      const pool = (g.items || []).filter(sweepable);
       const on = pool.length && pool.every(it => state.selected.has(it.id));
       pool.forEach(it => on ? state.selected.delete(it.id) : state.selected.add(it.id));
     },
@@ -1909,7 +1941,11 @@
     },
     'toggle-drawer': () => { if (state.apply) state.apply.drawer = !state.apply.drawer; },
     'toggle-details': () => { if (state.apply) state.apply.details = !state.apply.details; },
-    'restart-now': () => { toast('Restarting…', true); send({ cmd: 'restart' }); },
+    'restart-now': (t) => {
+      const v = t && t.dataset && t.dataset.release;
+      toast(v ? `Restarting into the Fedora ${v} installer…` : 'Restarting…', true);
+      send(v ? { cmd: 'restart', release: Number(v) } : { cmd: 'restart' });
+    },
     'restart-later': () => { requestCheck(false); },
     'back-to-list': () => {
       // the bridge holds state pushes back while the doctor view is up; tell it we left

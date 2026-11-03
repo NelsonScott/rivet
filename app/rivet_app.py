@@ -127,6 +127,7 @@ class Bridge:
         self.demo = demo
         self.settings = self.load_settings()
         self.last_kmod_verified = None
+        self.last_release = None         # done.release of the last run (a downloaded newer Fedora)
         self._applying = False
         self.on_busy_changed = None  # injected by the window: cb(busy: bool) on every change
         self.doctor_active = False   # the UI is on the doctor view (investigation or result)
@@ -585,6 +586,7 @@ class Bridge:
         self._cur_step = "download"
         self._last_msg = None
         self.last_kmod_verified = None   # a verdict belongs to ONE run, never the previous
+        self.last_release = None         # done.release of this run: the newer Fedora, downloaded
         try:
             proc = Gio.Subprocess.new(
                 argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
@@ -686,6 +688,8 @@ class Bridge:
             return
         if ev.get("step") == "done":
             self.last_kmod_verified = ev.get("kmod_verified")
+            rel = ev.get("release")
+            self.last_release = rel if isinstance(rel, dict) and rel.get("downloaded") else None
             self.applying = False
             self._done_seen = True
         elif ev.get("step"):
@@ -1231,14 +1235,85 @@ class Bridge:
         # let the collector recompute blocked_by, which is its job per contract
         GLib.timeout_add(600, lambda: (self.cmd_refresh({}), False)[1])
 
-    def cmd_restart(self, _msg):
+    def cmd_restart(self, msg):
         if self.last_kmod_verified is False:
             self.push_error(
                 "Refusing to reboot: the NVIDIA kernel module was not verified for the new kernel."
             )
             return
+        if msg.get("release") is not None:
+            # 2026-11-03: restart INTO the downloaded release upgrade. Not logind: dnf5's own
+            # `system-upgrade reboot` (rivet-apply --release-reboot, as root through polkit),
+            # and only for the version this run downloaded.
+            try:
+                version = int(msg.get("release"))
+            except (TypeError, ValueError):
+                self.push_error("Refusing to restart: no release version.")
+                return
+            if not self.last_release or int(self.last_release.get("version") or 0) != version:
+                self.push_error("Refusing to restart: Fedora %d was not downloaded in this run." % version)
+                return
+            detail = ("The computer restarts into the Fedora %d installer: a text screen with progress "
+                      "for 20 to 60 minutes, then it comes back on Fedora %d. Do not power it off "
+                      "while that runs." % (version, version))
+            self.confirm("Restart and install Fedora %d?" % version, detail,
+                         lambda ok: self._do_release_reboot(ok, version))
+            return
         detail = "The system will reboot now to finish applying the updates."
         self.confirm("Restart now?", detail, self._do_reboot)
+
+    def _do_release_reboot(self, ok, version):
+        if not ok:
+            return
+        if self.busy:
+            self.push_error(self.BUSY_MSG)
+            return
+        env_cmd = os.environ.get("RIVET_APPLY_CMD")
+        if env_cmd:
+            argv = shlex.split(env_cmd) + ["--release-reboot", str(version)]
+        elif os.path.exists(APPLY_BIN):
+            argv = [APPLY_BIN, "--release-reboot", str(version)]
+        elif self.demo:
+            self.push_error("Demo: this is where the computer would restart into the Fedora %d installer." % version)
+            return
+        else:
+            self.push_error("rivet-apply is not installed yet (%s)." % APPLY_BIN)
+            return
+        log("release reboot: %s" % " ".join(argv))
+        try:
+            proc = Gio.Subprocess.new(
+                argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
+            )
+        except GLib.Error as exc:
+            self.push_error("could not start %s: %s" % (argv[0], exc.message))
+            return
+        self._track(proc)
+        proc.communicate_utf8_async(None, None, self._release_reboot_done, version)
+
+    def _release_reboot_done(self, proc, res, version):
+        """The machine is going down on success; a refusal (prompt dismissed, nothing
+        downloaded) comes back as the done event's cause and is shown as an error."""
+        try:
+            _ok, out, _err = proc.communicate_utf8_finish(res)
+        except GLib.Error as exc:
+            out = ""
+            log("release reboot: %s" % exc.message)
+        finally:
+            self._release(proc)
+        done = None
+        for line in (out or "").splitlines():
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(ev, dict) and ev.get("step") == "done":
+                done = ev
+        rc, how = self._exit_info(proc)
+        if done and done.get("status") == "ok":
+            log("release reboot: %s" % done.get("summary"))
+            return
+        cause = (done or {}).get("cause") or (done or {}).get("summary") or ("rivet-apply %s." % how)
+        self.push_error("Not restarted: %s" % cause.rstrip(".").replace("Not restarted: ", ""))
 
     def _do_reboot(self, ok):
         if not ok:

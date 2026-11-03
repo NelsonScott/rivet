@@ -36,6 +36,9 @@ an eye on the software GNOME Software never sees.
   containers and Home Assistant updates, each with what it is and who uses it.
 - When a run fails, Fix it asks Claude Code to look at the logs and propose a fix you
   approve step by step.
+- A new Fedora release shows up as one more row, unticked, with a note on which of your
+  repos do not have builds for it yet. Tick it and Update now runs it last: downloads the
+  release while you keep working, then asks before restarting into the installer.
 
 ## Install
 

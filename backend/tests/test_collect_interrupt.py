@@ -70,7 +70,7 @@ class InterruptTest(unittest.TestCase):
         self.env = dict(os.environ, PATH=f"{bindir}:/usr/bin:/bin", FAKE_PIDFILE=str(self.pidfile),
                         RIVET_STATE_DIR=str(self.state_dir), RIVET_CONFIG_DIR=str(self.tmp / "cfg"),
                         RIVET_FLATPAK_DRYRUN_FIXTURE=str(self.tmp / "ops.json"), RIVET_NO_NOTIFY="1",
-                        RIVET_NO_ELSEWHERE="1")
+                        RIVET_NO_ELSEWHERE="1", RIVET_NO_RELEASE="1")
 
     def state(self):
         return json.loads((self.state_dir / "state.json").read_text())
