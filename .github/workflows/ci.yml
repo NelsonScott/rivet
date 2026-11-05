@@ -23,7 +23,7 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False \
             python3 python3-rpm python3-gobject gobject-introspection \
             gtk4 webkitgtk6.0 libadwaita flatpak-libs git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The tests assert what an unprivileged desktop user sees (pkexec prompts and so on),
       # so they run as a normal user, not as the container's root.
       - name: Test user
