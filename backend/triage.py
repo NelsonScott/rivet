@@ -157,8 +157,12 @@ def _cluster_payload(key: str, members: list[dict]) -> dict:
 
 
 # `--tools ""` does not stop @-mention attachments: "@/abs/path" or "@~/path" in the
-# prompt makes the CLI read that file into context (verified 2026-09-25). A zero-width
-# space after each "@" keeps the text readable but no longer a mention.
+# prompt makes the CLI read that file into context (verified 2026-09-25, again 2026-11-06).
+# CLAUDE_CODE_DISABLE_FILE_MENTIONS=1 is the CLI's own switch for it (checked on 2.1.319);
+# the zero-width space after each "@" covers a CLI that does not know the switch.
+NO_MENTIONS_ENV = {"CLAUDE_CODE_DISABLE_FILE_MENTIONS": "1"}
+
+
 def neutralize_mentions(text: str) -> str:
     return text.replace("@", "@\u200b")
 
@@ -180,6 +184,7 @@ def _ask_claude_cli(payload: list[dict]) -> str:
         text=True,
         timeout=CLAUDE_TIMEOUT,
         cwd=tempfile.gettempdir(),
+        env={**os.environ, **NO_MENTIONS_ENV},
     )
     raw = (cp.stdout or "").strip()
     if not raw:
