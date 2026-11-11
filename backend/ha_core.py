@@ -435,7 +435,11 @@ def judge(installed, latest, notes: dict, used: list[str] | None, *, use_ai: boo
     if used is not None:
         chk["in_use"] = len(used)
     # deterministic: a change whose notes link an integration in use
-    det = [(c, d) for c in changes for d in c["domains"] if d in use]
+    # 2026-11-11: only the change's SUBJECT counts here. The first real run (2026.11, 161 components
+    # loaded) went red on Nanoleaf, ZHA and Honeywell, none installed, because their notes also link
+    # glossary pages such as /integrations/event/ or /integrations/group/, which every HA has loaded.
+    # Incidental links are left to the model, which is given every domain.
+    det = [(c, d) for c in changes for d in c["domains"] if d in use and _is_subject(c, d)]
 
     def touch_rows(model_touches):
         rows, seen = [], set()
@@ -447,8 +451,9 @@ def judge(installed, latest, notes: dict, used: list[str] | None, *, use_ai: boo
                          "what_to_do": t["what_to_do"] or "Read this change in the release notes before installing.",
                          "by": "model"})
             seen.add((c["n"], t["domain"]))
+        judged = {n for n, _ in seen}      # a change the model already explained is not listed twice
         for c, d in det:
-            if (c["n"], d) in seen:
+            if (c["n"], d) in seen or c["n"] in judged:
                 continue
             seen.add((c["n"], d))
             rows.append({"release": c["release"], "title": c["title"], "integration": _display(c, d), "domain": d,
@@ -497,6 +502,15 @@ def judge(installed, latest, notes: dict, used: list[str] | None, *, use_ai: boo
         n = len(changes)
         chk["line"] = f"{n} breaking change{'s' if n != 1 else ''}, none touch an integration you use."
     return chk
+
+
+def _is_subject(change: dict, domain: str) -> bool:
+    """Is `domain` what this breaking change is about, not a page its text merely links to?
+    Yes when it is the only integration linked, or its name is in the change's title."""
+    if len(change.get("domains") or []) == 1:
+        return True
+    norm = lambda x: re.sub(r"[^a-z0-9]", "", str(x).lower())  # noqa: E731
+    return bool(norm(domain)) and norm(domain) in norm(change.get("title"))
 
 
 def _touch_line(touches: list[dict], *, ai: bool) -> str:

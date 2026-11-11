@@ -140,6 +140,20 @@ def answer(**kw):
     return lambda prompt: json.dumps(dict({"touches": [], "untouched": 3, "verdict": "none_touch", "summary": "s"}, **kw))
 
 
+class SubjectOnly(unittest.TestCase):
+    """2026-11-11: a change is about its subject, not every page its text links to."""
+
+    def test_an_incidental_glossary_link_is_not_a_touch(self):
+        c = {"title": "Nanoleaf", "domains": ["event", "nanoleaf"]}
+        self.assertFalse(H._is_subject(c, "event"))
+        self.assertTrue(H._is_subject(c, "nanoleaf"))
+
+    def test_the_title_or_a_sole_link_names_the_subject(self):
+        self.assertTrue(H._is_subject({"title": "Philips Hue", "domains": ["hue", "light"]}, "hue"))
+        self.assertFalse(H._is_subject({"title": "Philips Hue", "domains": ["hue", "light"]}, "light"))
+        self.assertTrue(H._is_subject({"title": "Something else", "domains": ["mqtt"]}, "mqtt"))
+
+
 class ModelMayOnlyRaise(unittest.TestCase):
     def test_none_touch_cannot_lower_what_the_notes_name(self):
         c = H.judge("2026.10.4", "2026.11.1", NOTES, USED, use_ai=True, ask=answer())
