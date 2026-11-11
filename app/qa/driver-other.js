@@ -42,7 +42,7 @@
   const btnText = (id) => txt('.ew-btn .btn', row(id));
   const SEV = { major: 0, minor: 1, patch: 2, unknown: 3 };
   let wait = 0, bad = 0, sel0 = -1, count0 = ''; const t0 = Date.now();
-  const LIMIT_MS = SC === 'other' || SC === 'elsewhere' || SC === 'other-bulk' || SC === 'other-remove' || SC === 'other-fix' ? 110000 : 55000;
+  const LIMIT_MS = SC === 'other' || SC === 'elsewhere' || SC === 'other-bulk' || SC === 'other-remove' || SC === 'other-fix' || /^other-tick/.test(SC) ? 110000 : 55000;
   const check = (cond, what) => { if (!cond) { bad++; log('CHECK FAILED: ' + what); } else log('ok: ' + what); };
   const steps = [];
   const then = (fn, w) => steps.push([fn, w || 3]);
@@ -64,7 +64,11 @@
     check(qa('.ew-row').length === items.length, 'one row per elsewhere item (' + qa('.ew-row').length + '/' + items.length + ')');
     check(qa('.ew-row .risk').length === 0, 'no severity dot on any Other-software row');
     check(qa('.ew-row').every(r => r.querySelectorAll('.badge').length === (r.dataset.status === 'rebuilt' ? 0 : 1)), 'every row carries exactly one badge (a rebuilt image none)');
-    check(qa('.ew-row .cb').length === 0, 'no checkbox on an Other-software row');
+    // 2026-11-10: a checkbox on exactly the rows with Update / Install in HA (never Open, Copy,
+    // a runbook, HA OS / firmware), none ticked by default
+    const tickable = (r) => r.dataset.status === 'ok' && /^(update|ha_install)$/.test(r.dataset.act) && !/home_assistant_operating_system|firmware/.test(r.dataset.id);
+    check(qa('.ew-row').every(r => !!r.querySelector('.cb[data-action="ew-tick"]') === tickable(r)), 'a checkbox on every Update / Install in HA row and on no other row');
+    check(qa('.ew-row .cb.on').length === 0 && !st().ewTicked.size, 'no Other-software row starts ticked');
     check(qa('.ew-row').every(r => !r.querySelector('.ew-what, .ew-used')), 'what it is / used by are not in the collapsed rows');
     check(qa('.ew-row').every(r => r.querySelectorAll('.ew-hint').length <= 1 && (!r.querySelector('.ew-hint') || r.querySelector('.ew-hint').scrollHeight <= 22)), 'at most one hint per row, one line high');
     for (const g of qa('.ew-group')) {
@@ -488,6 +492,136 @@
     then(() => { if (lister()) lister().scrollTop = 0; log('real strip (simulated, dnf emptied): "' + txt('.st-line') + '"'); check(!!q('.status-strip') && !q('main .hero'), 'real rows: the strip, not the hero'); shot('real-strip-' + theme()); }, 8);
     toggleTheme();
     then(() => shot('real-strip-' + theme()), 8);
+  }
+
+  // 2026-11-10: ticked Other-software rows ride along with Update now.
+  //   other-tick       one system item + uv:ruff (minor, never in a safe set) + Samba share (HA):
+  //                    the selection shortcuts never tick an Other row, the count is 3, the system run
+  //                    goes first, then the two rows stream on the result screen (Restart / Done
+  //                    disabled meanwhile), then each row's outcome. qa-e2e.sh checks the order in the
+  //                    bridge log.
+  //   other-tick-fail  the default selection fails (fake-apply fail): the ticked rows never run, the
+  //                    result screen says so in one line, and they are still ticked back on the list.
+  //   other-tick-only  no system item, verdaccio + pnpm (a major: no confirmation, ticking was it):
+  //                    no apply at all, the rows stream in place in the list.
+  if (/^other-tick/.test(SC)) {
+    const RUFF = 'uv:ruff', SAMBA = 'ha:update.samba_share_update', VERD = 'npm:verdaccio', PNPM = 'npm:pnpm';
+    const tick = (id) => row(id).querySelector('.cb[data-action="ew-tick"]').click();
+    const nowCount = () => txt('[data-action="update-now"] .count');
+    const heroBtns = () => qa('.hero .actions .btn');
+    const noneSelected = () => { for (let k = 0; k < 2 && st().selected.size; k++) q('[data-action="select-all-global"]').click(); };
+    let meta0 = '', sel1 = 0, sawApplying = false, ranDuringApply = false;
+    const ids = SC === 'other-tick-only' ? [VERD, PNPM] : [RUFF, SAMBA];
+    then(() => {
+      shapeChecks(st().doc);
+      const dnfCb = q('.card[data-group="dnf"] .row .cb'), ewCb = q('.ew-row .cb');
+      check(dnfCb && ewCb && Math.abs(dnfCb.getBoundingClientRect().left - ewCb.getBoundingClientRect().left) < 1, 'Other-software checkboxes sit in the same column as the System ones');
+      const names = qa('.ew-group[data-group="ha"] .ew-row .name').map(n => Math.round(n.getBoundingClientRect().left));
+      check(names.every(x => x === names[0]), 'names line up in a card with tickable and untickable rows (' + names + ')');
+      if (SC === 'other-tick') { noneSelected(); qa('.row:not(.cluster):not(.routine) > .cb[data-action="toggle-row"]:not(.disabled)')[0].click(); }
+      if (SC === 'other-tick-only') noneSelected();
+      sel1 = st().selected.size; meta0 = txt('.summary .meta');
+      log('system selection: ' + sel1 + ' (' + [...st().selected].join(' ') + '), meta="' + meta0 + '"');
+      ids.forEach(tick);
+    }, 2);
+    then(() => {
+      check(ids.every(id => st().ewTicked.has(id) && row(id).querySelector('.cb.on')) && st().ewTicked.size === 2, 'a click on a row checkbox ticks it (' + [...st().ewTicked] + ')');
+      check(nowCount() === String(sel1 + 2) && !q('[data-action="update-now"]').disabled, 'Update now counts the system items plus the ticked rows: ' + nowCount());
+      check(txt('.summary .meta') === meta0, 'the "selected" size stays system-only');
+      if (SC === 'other-tick-only') check(!!row(PNPM).querySelector('.cb') && !q('.ew-confirm'), 'a major row can be ticked; no confirmation opens');
+      // none of the selection shortcuts touches an Other row
+      const before = [...st().ewTicked].sort().join();
+      for (const a of ['select-all-global', 'select-all-global', 'select-safe', 'select-security']) { const b = q(`[data-action="${a}"]:not([disabled])`); if (b) b.click(); }
+      const g = q('[data-action="select-group"][data-group="dnf"]'); if (g) { g.click(); g.click(); }
+      check([...st().ewTicked].sort().join() === before, 'Select all / Safe only / Security only / group Select all never tick or untick an Other row');
+      // back to the selection this scenario wants
+      if (SC === 'other-tick') { noneSelected(); qa('.row:not(.cluster):not(.routine) > .cb[data-action="toggle-row"]:not(.disabled)')[0].click(); }
+      if (SC === 'other-tick-only') noneSelected();
+      if (SC === 'other-tick-fail') { noneSelected(); q('[data-action="select-safe"]').click(); }
+      sel1 = st().selected.size;
+      check(nowCount() === String(sel1 + 2), 'count after the shortcuts: ' + nowCount() + ' (' + sel1 + ' system + 2)');
+      scrollTo(q('.ew-h'), 10);
+    }, 2);
+    then(() => shot(SC + '-list-' + theme()), 8);
+    if (SC === 'other-tick-only') {
+      then(() => q('[data-action="update-now"]').click(), 1);
+      until(() => q('.ew-bulk-run'), 'the ticked rows start in place', () => {
+        log('running: view=' + st().view + ' group="' + txt('.ew-bulk-run') + '" in ' + (q('.ew-bulk-run').closest('.ew-group') || {}).dataset?.group);
+        check(st().view === 'updates' && !st().apply, 'no system run: the list stays');
+        check(/^Updating 1 of 2/.test(txt('.ew-bulk-run')) && q('.ew-bulk-run').closest('.ew-group').dataset.group === 'pc' && !!q('.ew-bulk-run [data-action="ew-bulk-stop"]'), 'This PC says Updating 1 of 2, with Stop after this one');
+        check(!q('.ew-confirm'), 'pnpm (major) runs without its in-row confirmation');
+        scrollTo(q('.ew-group[data-group="pc"]'), 20);
+      });
+      then(() => shot(SC + '-running-' + theme()), 6);
+      until(() => !st().ewBatch && !st().ewTickedRun, 'the ticked run ends', () => {
+        const res = ids.map(id => id + '=' + ((runOf(id) || {}).className || 'none'));
+        log('done: ' + res.join(' ') + ' toast="' + txt('.toast') + '"');
+        check(ids.every(id => runOf(id) && runOf(id).classList.contains('ok')), 'both rows show their outcome in place');
+        check(/^Other software: 2 done\.$/.test(txt('.toast')), 'one toast line sums it up');
+        check(!st().ewTicked.size && nowCount() === '0', 'the rows that ran are no longer ticked: Update now 0');
+        scrollTo(q('.ew-group[data-group="pc"]'), 20);
+      });
+      then(() => shot(SC + '-done-' + theme()), 8);
+      toggleTheme();
+      then(() => shot(SC + '-done-' + theme()), 8);
+    } else {
+      then(() => {
+        // watch closely (the fake system run can end within one driver tick): every view the page passes
+        // through, and whether an Other row had started while the system run was on screen
+        const w = setInterval(() => {
+          if (st().view === 'applying') { sawApplying = true; if (Object.keys(st().ewRuns).length || st().ewBatch) ranDuringApply = true; }
+          if (st().view !== 'applying' && st().view !== 'updates') clearInterval(w);
+        }, 10);
+        q('[data-action="update-now"]').click();
+      }, 1);
+      until(() => st().view === 'done', 'the system run ends', () => {
+        check(sawApplying && !ranDuringApply, 'the system run went first: no Other row started while it ran');
+      });
+      if (SC === 'other-tick-fail') {
+        then(() => {
+          log('fail: h1="' + txt('main h1') + '" then="' + txt('.then-held') + '" buttons=' + heroBtns().map(b => b.textContent.trim() + (b.disabled ? '(disabled)' : '')).join('|'));
+          check(/fail/i.test(txt('main h1')) && st().apply.thenState === 'held', 'the system run failed');
+          check(txt('.then-held') === 'The 2 ticked Other software updates did not run because the system update failed. They are still ticked.', 'one plain line says the ticked rows did not run');
+          check(!Object.keys(st().ewRuns).length && !st().ewBatch && !q('.ew-then'), 'nothing in Other software ran');
+          check(heroBtns().every(b => !b.disabled), 'the result buttons are live (nothing else runs)');
+        }, 2);
+        then(() => shot(SC + '-result-' + theme()), 8);
+        toggleTheme();
+        then(() => shot(SC + '-result-' + theme()), 8);
+        then(() => q('[data-action="back-to-list"]').click(), 2);
+        until(() => st().view === 'updates' && q('.ew-row'), 'back on the list', () => {
+          check(ids.every(id => row(id).querySelector('.cb.on')) && st().ewTicked.size === 2, 'the two rows are still ticked');
+          check(nowCount() === String(st().selected.size + 2), 'and still counted: ' + nowCount());
+          scrollTo(q('.ew-h'), 10);
+        });
+        then(() => shot(SC + '-list-after-' + theme()), 8);
+      } else {
+        until(() => q('.ew-then .ew-bulk-run'), 'the ticked rows start on the result screen', () => {
+          log('result: h1="' + txt('main h1') + '" then="' + txt('.ew-then .ew-sub') + '" buttons=' + heroBtns().map(b => b.textContent.trim() + (b.disabled ? '(disabled)' : '')).join('|'));
+          check(/^Updating 1 of 2/.test(txt('.ew-then .ew-bulk-run')) && !!q('.ew-then [data-action="ew-bulk-stop"]'), 'the result screen says Updating 1 of 2, with Stop after this one');
+          check(qa('.ew-then .ew-row').map(r => r.dataset.id).join() === ids.join(), 'it lists exactly the ticked rows, in order');
+          check(heroBtns().length > 0 && heroBtns().every(b => b.disabled && /still updating/.test(b.title)), 'Done / Restart now are disabled with the reason meanwhile');
+          check(/wait until these finish/.test(txt('.then-note')), 'and a line says so');
+          shot(SC + '-running-' + theme());
+        });
+        until(() => st().apply && st().apply.thenState === 'done', 'the ticked rows finish', () => {
+          const res = ids.map(id => id + '=' + ((runOf(id) || {}).className || 'none'));
+          log('then done: ' + res.join(' ') + ' sum="' + txt('.then-sum') + '"');
+          check(ids.every(id => runOf(id) && runOf(id).classList.contains('ok')), 'each row shows its outcome on the result screen');
+          check(txt('.then-sum') === '2 done', 'the sub-heading sums it up: 2 done');
+          check(heroBtns().every(b => !b.disabled), 'Done is live again');
+          check(!st().ewTicked.size, 'the rows that ran are no longer ticked');
+        });
+        then(() => shot(SC + '-result-' + theme()), 8);
+        toggleTheme();
+        then(() => shot(SC + '-result-' + theme()), 8);
+        then(() => check(ids.every(id => runOf(id) && runOf(id).classList.contains('ok')), 'the outcome stays on the result screen after the re-check'), 6);
+        then(() => q('.hero .actions [data-action="restart-later"]').click(), 2);
+        until(() => st().view === 'updates' && q('.ew-row'), 'back on the list', () => {
+          check(qa('.ew-row .cb.on').length === 0 && nowCount() === String(st().selected.size), 'nothing in Other software is ticked any more: ' + nowCount());
+        });
+      }
+    }
   }
 
   // QA_CUT=n (env of qa-e2e.sh): run only the first n steps, to bisect a failure

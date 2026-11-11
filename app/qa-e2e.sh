@@ -18,7 +18,10 @@
 # (confirmation, a refused first try with the HA fallback, then the row goes; the bridge must
 # have run rivet-apply --other-remove twice); "other-fix" (2026-11-01) checks containers are off by
 # default, fails Alexa Media Player and drives Fix it (the real other_fix.run on canned evidence,
-# qa/fake-claude.py instead of claude); "other-real" looks at THIS box's state.json, presses
+# qa/fake-claude.py instead of claude); "other-tick" / "other-tick-fail" / "other-tick-only"
+# (2026-11-10) tick Other-software rows for Update now (system run first, then the rows on the
+# result screen; a failed system run keeps them ticked; only Other rows: no system run at all; the
+# bridge's start order is checked in its log); "other-real" looks at THIS box's state.json, presses
 # nothing. other / other-row / other-bulk run with show_containers on in the scratch settings.json. "looks" picks every look x light/dark through Preferences > Look and scans the painted
 # text contrast (qa/driver-looks.js); "looks-real" shoots the looks on THIS box's state.json.
 # warn/fail/crash also open
@@ -28,7 +31,7 @@
 set -u
 . "$(dirname "$(readlink -f "$0")")/qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-e2e}; mkdir -p "$OUT/shots"; shift || true
-SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix looks abuse abuse-noclaude second-instance release}
+SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix other-tick other-tick-fail other-tick-only looks abuse abuse-noclaude second-instance release}
 HERE=$(dirname "$(readlink -f "$0")")
 
 gnome-shell --headless --wayland --no-x11 --virtual-monitor 1280x860 > "$OUT/shell.log" 2>&1 &
@@ -116,6 +119,14 @@ for SC in $SCENARIOS; do
     # the remove patches state.json on disk, so the sample has to BE the scratch state.json
     mkdir -p "$QAHOME/.local/state/rivet"; cp "$HERE/ui/sample-state.json" "$QAHOME/.local/state/rivet/state.json"
   fi
+  case "$SC" in other-tick|other-tick-fail|other-tick-only)
+    # 2026-11-10: Other-software rows ticked for Update now (qa/driver-other.js): the system run
+    # (fake-apply ok, or `fail` for other-tick-fail) first, then the ticked rows through the bridge's
+    # otherUpdateMany ticked:true -> fake-apply.py --other-update, patching the scratch state.json
+    DRIVER=$HERE/qa/driver-other.js; LIMIT=110
+    [ "$SC" = other-tick-fail ] && APPLY_SC=fail
+    mkdir -p "$QAHOME/.local/state/rivet"; cp "$HERE/ui/sample-state.json" "$QAHOME/.local/state/rivet/state.json" ;;
+  esac
   if [ "$SC" = other ] || [ "$SC" = elsewhere ]; then
     # 2026-10-31: the Other software section from sample-state.json (qa/driver-other.js);
     # its buttons run qa/fake-apply.py --other-update, never a real npm / podman / HA call
@@ -199,6 +210,16 @@ for SC in $SCENARIOS; do
     [ -e "$QAHOME/.local/state/rivet/release-reboot.calls" ] && { echo "$SC: fake-apply --release-reboot was called"; EXTRA=bad; }
     grep -q '\[QA\] release: FAIL' "$LOG" && EXTRA=bad
   fi
+  case "$SC" in other-tick|other-tick-fail|other-tick-only)
+    # the order the bridge started things in: rivet-apply --plan first, then the ticked rows
+    seq=$(grep -oE "\[rivet\] (apply: .*--plan|other update: .*--other-update [^ ]+)" "$LOG" | sed -E 's/.*apply: .*/apply/; s/.*--other-update /other:/' | tr '\n' ' ')
+    want=$(case "$SC" in other-tick) echo "apply other:uv:ruff other:ha:update.samba_share_update ";; other-tick-fail) echo "apply ";; other-tick-only) echo "other:npm:verdaccio other:npm:pnpm ";; esac)
+    echo "$SC: bridge order: ${seq:-nothing} (want: $want)"; [ "$seq" = "$want" ] || EXTRA=bad
+    if [ "$SC" = other-tick ]; then
+      n=$(grep -c "refresh: deferred until the ticked" "$LOG")
+      echo "$SC: the post-apply check waited for the ticked rows: $n (want 1)"; [ "$n" = 1 ] || EXTRA=bad
+    fi ;;
+  esac
   if [ "$SC" = other-bulk ]; then
     n=$(grep -c "other restart: .*--ha-restart" "$LOG")
     echo "$SC: bridge restarted Home Assistant $n time(s) (want 1)"; [ "$n" = 1 ] || EXTRA=bad

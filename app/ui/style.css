@@ -535,6 +535,22 @@ input{font-family:var(--font)}
 .ew-expand .small{font-size:12px;color:var(--fg-3);margin-top:6px}
 .ew-expand .notes{margin-top:8px;white-space:pre-wrap;word-break:break-all}
 .ew-empty{padding:14px 18px;font-size:13px;color:var(--fg-3)}
+/* 2026-11-10: a card with tickable rows has a checkbox column (16 px + the row gap), at the same x as
+   the System rows' checkboxes; a row that cannot be ticked keeps the slot so the names line up */
+.ew-row .cb{cursor:pointer}
+.cb-slot{width:16px;height:16px;flex:none}
+.ew-card.ticks{--ew-in:48px}
+.ew-card.pc.ticks{--ew-in:142px}
+/* the result screen: the ticked rows Update now ran after the system ones */
+.ew-then{margin-top:22px;text-align:left}
+.ew-then .ew-sub{margin-bottom:8px}
+.ew-then .card{margin-bottom:0}
+.hero.result .inner:has(.ew-then){max-width:780px;width:100%}
+.hero .ew-then .btn.small{height:30px;padding:0 12px;font-size:12px}
+.then-sum{margin-left:auto;font-size:12px;font-weight:600;color:var(--fg-2)}
+.then-note{margin:8px 2px 0;font-size:12px;color:var(--fg-3)}
+.hero .then-held{margin:14px auto 0;padding:9px 14px;border-radius:10px;font-size:13px;line-height:1.45;color:var(--fg-2);
+  background:var(--card);border:1px solid var(--card-line)}
 
 /* ---- the "nothing pending" screen (2026-10-31 c) ---- */
 /* one sentence where the updates screen has its summary bar */
@@ -596,8 +612,8 @@ input{font-family:var(--font)}
 .ew-remove-modal .cmd{font-size:11.5px;color:var(--fg-3);margin:12px 0 0;padding:8px 12px;border:1px solid var(--card-line);border-radius:10px;background:var(--card);word-break:break-all}
 
 @media (max-width:1180px){ .status-strip{padding:16px 20px 14px} }
-@media (max-width:900px){ .ew-row .src{width:64px} .ew-card.pc{--ew-in:96px} .ew-btn{width:auto} .ew-note{display:none} .ew-row .badge{min-width:0} }
-@media (max-width:720px){ .ew-row .src{display:none} .ew-card.pc{--ew-in:18px} .ew-remove{display:none} }
+@media (max-width:900px){ .ew-row .src{width:64px} .ew-card.pc{--ew-in:96px} .ew-card.pc.ticks{--ew-in:126px} .ew-btn{width:auto} .ew-note{display:none} .ew-row .badge{min-width:0} }
+@media (max-width:720px){ .ew-row .src{display:none} .ew-card.pc{--ew-in:18px} .ew-card.pc.ticks{--ew-in:48px} .ew-remove{display:none} }
 .expand .meta .held-since{margin-top:0;font:inherit;color:inherit}
 
 /* ---- Looks picker (Preferences › Look) + type size (2026-10-31) ---- */
