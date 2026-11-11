@@ -753,12 +753,19 @@ def collect_ha(ctx: Ctx) -> dict:
         name = (a.get("title") or (a.get("friendly_name") if kind == "firmware" else dev[2])
                 or a.get("friendly_name") or eid)
         name = re.sub(r" Update$", "", name)
-        installable = kind in ("addon", "integration") and int(a.get("supported_features") or 0) & HA_INSTALL
+        # 2026-11-10: core is installable too (after its release notes are investigated, see
+        # ha_core.py); OS, supervisor and firmware stay Open in HA
+        installable = kind in ("addon", "integration", "core") and int(a.get("supported_features") or 0) & HA_INSTALL
         extra = ha_addon_facts(kind, name, dev, info, base)
         if kind == "integration" and HA_RESTART_RE.search(str(a.get("release_summary") or "")):
             extra["restart_pending"] = True
+        if kind == "core":
+            extra["ha_link"] = f"{base}/config/updates"
+            if a.get("release_summary"):
+                extra["release_summary"] = re.sub(r"<[^>]+>", "", str(a["release_summary"]))[:600]
         items.append(row("ha", name, a.get("installed_version"), a.get("latest_version"),
-                         key=eid, link=f"{base}/config/updates" if kind in ("core", "os", "supervisor", "firmware")
+                         key=eid, link=f"{base}/config/updates" if kind in ("os", "supervisor", "firmware")
+                         or (kind == "core" and not installable)       # an Open in HA button: the updates page
                          else (a.get("release_url") or f"{base}/config/updates"),
                          hint="Update in Home Assistant: Settings › System › Updates",
                          used_by=ha_used_by(kind, name, a, eid, info),
@@ -766,6 +773,11 @@ def collect_ha(ctx: Ctx) -> dict:
                          if kind == "firmware" else None,
                          kind=kind, entity_id=eid, installable=bool(installable),
                          backup=bool(int(a.get("supported_features") or 0) & HA_BACKUP), **extra))
+    if any(i["kind"] == "core" for i in items):
+        import ha_core                      # the deterministic step now, or the cached investigation
+        cache = ha_core.load_cache()
+        for i in items:
+            ha_core.prepare(i, cache)
     return result(checked=total, items=items)
 
 
@@ -1267,8 +1279,9 @@ USER_SOURCES = ("npm", "pipx", "uv", "cargo", "podman")
 def decide_action(it: dict) -> dict:
     """Which button a row gets (CONTRACT.md "Other software"):
     update      npm / pipx / uv / cargo / podman pull: rivet-apply --other-update ID
-    ha_install  HA add-ons + HACS integrations: update.install over the REST API
-    open        HA core / OS / supervisor / firmware, GNOME extensions: the link
+    ha_install  HA add-ons + HACS integrations: update.install over the REST API;
+                HA core (2026-11-10): the same, after check_config, and always asks first
+    open        HA OS / supervisor / firmware, GNOME extensions: the link
     copy        what is left to run by hand (podman auto-update, a restart after a pull)
     runbook     a container that holds data (2026-11-01): its runbook link, never Update;
                 with no runbook known, no button (the row carries `manual` instead)
@@ -1282,7 +1295,7 @@ def decide_action(it: dict) -> dict:
         if src in USER_SOURCES and it.get("command") and not it.get("pulled") \
                 and not str(it.get("command")).startswith("podman auto-update"):
             act = "update"
-        elif src == "ha" and it.get("installable"):
+        elif src == "ha" and it.get("installable") and it.get("kind") in ("addon", "integration", "core"):
             act = "ha_install"
         elif it.get("link") and src in ("ha", "gnome-ext"):
             act = "open"
@@ -1293,7 +1306,10 @@ def decide_action(it: dict) -> dict:
     elif it.get("link") and it.get("status") != "updated":
         act = "open"
     it["action"] = act
-    it["confirm"] = act in ("update", "ha_install") and it.get("severity") == "major"
+    # HA core always asks first (it restarts Home Assistant; the confirmation carries the
+    # release-notes verdict), never mind the severity
+    it["confirm"] = act in ("update", "ha_install") and (
+        it.get("severity") == "major" or (it.get("source") == "ha" and it.get("kind") == "core"))
     return it
 
 

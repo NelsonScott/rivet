@@ -394,6 +394,21 @@ def main(argv=None) -> int:
             doc["generated_at"] = now_iso()
             write_json_atomic(STATE_PATH, doc)
             log("elsewhere finished after the main check; state.json written again", quiet=args.quiet)
+        # Home Assistant core (2026-11-10, ha_core.py): read the release notes of a pending core
+        # update and judge them against what this Home Assistant uses, once per (installed ->
+        # latest), AFTER the result is on disk, inside the same budget as the layer below. The
+        # notes are read whatever the AI setting; claude -p only when the user opted in (never
+        # with --no-llm or a fixture: no fixture run gets here). Never fails the run.
+        if ew is not None and isinstance(doc.get("elsewhere"), dict):
+            try:
+                import ha_core
+                budget = min(ha_core.BUDGET_S, 950 - (time.monotonic() - t0))
+                if budget >= 15 and ha_core.investigate(doc["elsewhere"].get("items") or [], use_ai=use_ai,
+                                                        budget=budget, log=lambda m: log(m, quiet=args.quiet)):
+                    doc["generated_at"] = now_iso()
+                    write_json_atomic(STATE_PATH, doc)
+            except Exception as exc:  # noqa: BLE001
+                log(f"ha-core: {type(exc).__name__}: {exc}", quiet=args.quiet)
         # Other software: the "what it is / used by" lines nothing else could fill come from
         # `claude -p`, once per name (know-cache.json), AFTER the result is on disk, with a
         # hard budget. A failure leaves the line empty; it never fails the run.

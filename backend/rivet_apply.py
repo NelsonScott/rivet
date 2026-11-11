@@ -6,7 +6,7 @@
     rivet-apply --plan plan.json --resolve-only   # compute, change nothing
     rivet-apply --try-held REF [--force] | --verify-held REF [--timeout 240]
                  | --keep-held REF | --rollback-held REF      # held-back refs, see held_ops.py
-    rivet-apply --other-update ID         # one "Other software" row (npm/pipx/uv/cargo/
+    rivet-apply --other-update ID [--confirmed]  # one "Other software" row (npm/pipx/uv/cargo/
                                            # podman pull/HA add-on), see elsewhere_apply.py
     rivet-apply --other-remove ID         # uninstall one UNUSED Home Assistant add-on row
     rivet-apply --ha-restart              # restart HA core, only when an integration waits for it
@@ -1610,6 +1610,9 @@ def main(argv=None) -> int:
                          "installed kernel); changes nothing")
     ap.add_argument("--other-update", metavar="ID",
                     help="update one Other-software row of state.json (user level, no root)")
+    ap.add_argument("--confirmed", action="store_true",
+                    help="with --other-update of Home Assistant core: the user confirmed it in its row (or "
+                         "ticked it for Update now); without it core is refused (2026-11-10)")
     ap.add_argument("--other-remove", metavar="ID",
                     help="uninstall one UNUSED Home Assistant add-on row of state.json")
     ap.add_argument("--ha-restart", nargs="?", const=RESTART_TAG, metavar="TAG",
@@ -1632,7 +1635,7 @@ def main(argv=None) -> int:
     em = Emitter()
     if args.other_update:
         import elsewhere_apply
-        return elsewhere_apply.run(em, args.other_update, load_state())
+        return elsewhere_apply.run(em, args.other_update, load_state(), confirmed=args.confirmed)
     if args.other_remove:
         import elsewhere_apply
         return elsewhere_apply.run(em, args.other_remove, load_state(), remove=True)

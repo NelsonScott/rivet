@@ -42,7 +42,7 @@
   const btnText = (id) => txt('.ew-btn .btn', row(id));
   const SEV = { major: 0, minor: 1, patch: 2, unknown: 3 };
   let wait = 0, bad = 0, sel0 = -1, count0 = ''; const t0 = Date.now();
-  const LIMIT_MS = SC === 'other' || SC === 'elsewhere' || SC === 'other-bulk' || SC === 'other-remove' || SC === 'other-fix' || /^other-tick/.test(SC) ? 110000 : 55000;
+  const LIMIT_MS = SC === 'other' || SC === 'elsewhere' || SC === 'other-bulk' || SC === 'other-remove' || SC === 'other-fix' || /^other-(tick|hacore)/.test(SC) ? 110000 : 55000;
   const check = (cond, what) => { if (!cond) { bad++; log('CHECK FAILED: ' + what); } else log('ok: ' + what); };
   const steps = [];
   const then = (fn, w) => steps.push([fn, w || 3]);
@@ -98,10 +98,10 @@
       shapeChecks(st().doc);
       const inGroup = (g) => qa(`.ew-group[data-group="${g}"] .ew-row`).map(r => r.dataset.id);
       check(inGroup('pc').includes('npm:pnpm') && inGroup('pc').includes('cargo:_source') && inGroup('pc').includes('gnome-ext:tilingshell@ferrarodomenico.com'), 'npm, cargo and GNOME extensions are under This PC');
-      check(inGroup('ha').length === 6 && inGroup('ha').every(id => /^ha:/.test(id)), 'every HA row is under Home Assistant');
+      check(inGroup('ha').length === 7 && inGroup('ha').every(id => /^ha:/.test(id)), 'every HA row is under Home Assistant');
       check(inGroup('containers').length === 6 && inGroup('containers').every(id => /^podman:/.test(id)), 'podman rows are under Containers');
       const P = (n) => 'podman:docker.io/' + n;
-      check(btnText(P('library/couchdb:3')) === 'Open runbook ↗' && /runbooks\/obsidian-sync$/.test(row(P('library/couchdb:3')).querySelector('.ew-runbook').dataset.url), 'CouchDB (holds data, runbook known): Open runbook');
+      check(btnText(P('library/couchdb:3')) === 'Open runbook ↗' && /runbooks\/notes-sync$/.test(row(P('library/couchdb:3')).querySelector('.ew-runbook').dataset.url), 'CouchDB (holds data, runbook known): Open runbook');
       check(txt('.ver', row(P('library/couchdb:3'))) === '3.5.2.1 → 3.5.3' && txt('.badge', row(P('library/couchdb:3'))) === 'PATCH', 'CouchDB shows versions: 3.5.2.1 → 3.5.3, PATCH');
       check(txt('.ew-manual', row(P('library/ghost:5-alpine'))) === 'Manual: holds data, upgrade by hand' && !row(P('library/ghost:5-alpine')).querySelector('.ew-btn .btn'), 'Ghost (holds data, no runbook): the manual note as plain text');
       check(txt('.ver', row(P('library/redis:7.2'))) === '7.2.14' && !row(P('library/redis:7.2')).querySelector('.badge'), 'redis (rebuilt upstream): its version only, no badge');
@@ -117,6 +117,7 @@
       check(btnText('npm:pnpm') === 'Update' && btnText('uv:ruff') === 'Update' && btnText('podman:docker.io/library/nginx:1.27') === 'Update', 'user-level rows get Update');
       check(btnText('ha:update.matter_server_update') === 'Install in HA' && btnText('ha:update.alexa_media_player_update') === 'Install in HA', 'add-ons and HACS integrations get Install in HA');
       check(btnText('ha:update.home_assistant_operating_system_update') === 'Open in HA ↗' && btnText('ha:update.smart_plug_firmware') === 'Open in HA ↗', 'HA OS and firmware stay Open in HA');
+      check(btnText('ha:update.home_assistant_core_update') === 'Install in HA', 'HA core (2026-11-10): Install in HA, after its release check');
       check(btnText('gnome-ext:tilingshell@ferrarodomenico.com') === 'Open ↗', 'GNOME extensions stay Open');
       check(qa('.ew-row').some(r => r.dataset.status === 'failed' && /CHECK FAILED/.test(txt('.badge', r))), 'a failed collector says CHECK FAILED');
       check(qa('.ew-row').some(r => r.dataset.status === 'cant_check' && /CAN.T CHECK/.test(txt('.badge', r))), 'an AppImage says CAN’T CHECK');
@@ -213,7 +214,7 @@
     // the "nothing pending" screen untouched: the status strip over Held back + Other software
     then(() => push(nothingPending), 3);
     then(() => {
-      check(!!q('.status-strip') && !q('main .hero') && /^Fedora and Flatpak: up to date · 2 held back, 1 to try · 16 other updates · 1 check failed$/.test(txt('.st-line')), 'the strip, as one sentence: "' + txt('.st-line') + '"');
+      check(!!q('.status-strip') && !q('main .hero') && /^Fedora and Flatpak: up to date · 2 held back, 1 to try · 17 other updates · 1 check failed$/.test(txt('.st-line')), 'the strip, as one sentence: "' + txt('.st-line') + '"');
       const strip = q('.status-strip').getBoundingClientRect(), h = q('.ew-h').getBoundingClientRect();
       check(strip.height <= 80 && h.top - strip.bottom <= 44, 'compact: the first section starts right under the strip (' + Math.round(strip.height) + ' px, gap ' + Math.round(h.top - strip.bottom) + ')');
       shot('strip-' + theme());
@@ -622,6 +623,103 @@
         });
       }
     }
+  }
+
+  // 2026-11-10: Home Assistant core, investigated (the REAL ha_core.py in qa/fake-collect.py, canned notes,
+  // qa/fake-claude.py) and installed through the REAL elsewhere_apply.run_core against fake_ha.py:
+  //   other-hacore       MQTT is in use -> red "Touches MQTT and Automation…" (AI); install -> the
+  //                      restart is expected -> back on 2026.11.1 -> UPDATED.
+  //   other-hacore-none  nothing in use is touched -> amber MONTHLY "4 breaking changes, none touch…";
+  //                      install -> restart -> back on the OLD version: rolled back, red, Fix it offered.
+  if (/^other-hacore/.test(SC)) {
+    const CORE = 'ha:update.home_assistant_core_update', none = SC === 'other-hacore-none';
+    const grp = () => q('.ew-group[data-group="ha"]');
+    let sawRestart = false;
+    then(() => push(nothingPending), 3);
+    then(() => {
+      const r = row(CORE), it = st().doc.elsewhere.items.find(i => i.id === CORE);
+      log('core row: ' + txt('.name', r) + ' ' + txt('.ver', r) + ' {' + txt('.badge', r) + '/' + r.querySelector('.badge').className + '} btn=' + btnText(CORE) + ' hint="' + txt('.ew-hint', r) + '"');
+      shapeChecks(st().doc);
+      check(it.core_check && it.core_check.status === 'checked', 'the row carries the investigation (status checked by the real backend)');
+      check(txt('.badge', r) === 'MONTHLY' && r.querySelector('.badge').classList.contains(none ? 'minor' : 'major'), none ? 'badge MONTHLY in amber (a monthly release is never below yellow)' : 'badge MONTHLY in red (it touches an integration in use)');
+      check(none ? /^AI ?4 breaking changes, none touch an integration you use\.$/.test(txt('.ew-hint', r))
+        : /^AI ?Touches MQTT and Automation, which you use: the discovery_prefix option in YAML is removed; check your config first\.$/.test(txt('.ew-hint', r)), 'the one plain line, from the real check');
+      check(!!r.querySelector('.ew-hint .ai-tag') && r.querySelector('.ew-hint').classList.contains('bad') === !none, 'tagged AI; red text only when it touches something');
+      check(btnText(CORE) === 'Install in HA' && !!r.querySelector('.cb[data-action="ew-tick"]'), 'Install in HA, and a checkbox for Update now');
+      check(btnText('ha:update.home_assistant_operating_system_update') === 'Open in HA ↗' && /^Open only/.test(txt('.ew-hint', row('ha:update.home_assistant_operating_system_update'))), 'HA OS stays Open only');
+      check(!(grp().querySelector('.ew-bulk') || { title: '' }).title.includes('Core'), 'core is not in "Update the safe ones"');
+      scrollTo(grp(), 20);
+    }, 2);
+    then(() => shot(SC + '-row-' + theme()), 8);
+    // details: what touches what, the releases read, the notes link
+    then(() => row(CORE).click(), 2);
+    then(() => {
+      const x = q(`.ew-expand[data-id="${CORE}"]`);
+      log('details: "' + txt('.ew-core', x).slice(0, 300) + '"');
+      check(/4 breaking changes in the notes/.test(txt('.ew-core', x)) && /checked against \d+ integrations/.test(txt('.ew-core', x)), 'details: how many changes, against how many integrations');
+      check(none ? !x.querySelector('.ew-core-touches') : qa('.ew-core-touches li', x).length === 2 && /MQTT/.test(txt('.ew-core-touches', x)), none ? 'no touch list when nothing is touched' : 'details: each touch with what changes and what to do');
+      check(/Read: 2026\.11 \(4 breaking\) · 2026\.11\.1 \(0 breaking\)/.test(txt('.ew-core-rels', x)), 'details: the releases read, each a link');
+      check(/release notes/.test(txt('.meta a', x)), 'and the release-notes link');
+      scrollTo(row(CORE), 40);
+    }, 2);
+    then(() => shot(SC + '-details-' + theme()), 8);
+    then(() => row(CORE).click(), 2);
+    // ticking core asks first too
+    then(() => row(CORE).querySelector('.cb[data-action="ew-tick"]').click(), 2);
+    then(() => {
+      const c = q(`.ew-confirm[data-id="${CORE}"]`);
+      check(!!c && !st().ewTicked.has(CORE) && txt('[data-action="ew-tick-go"]', c) === 'Tick for Update now', 'ticking core opens its confirmation first');
+      c.querySelector('[data-action="ew-tick-go"]').click();
+    }, 2);
+    then(() => {
+      check(st().ewTicked.has(CORE) && !q('.ew-confirm'), 'confirmed: ticked for Update now');
+      row(CORE).querySelector('.cb[data-action="ew-tick"]').click();
+    }, 2);
+    then(() => check(!st().ewTicked.has(CORE), 'unticking needs no confirmation'), 1);
+    // Install in HA -> the confirmation (nothing runs) -> Cancel -> again -> Install and restart
+    then(() => row(CORE).querySelector('[data-action="ew-update"]').click(), 2);
+    then(() => {
+      const c = q(`.ew-confirm[data-id="${CORE}"]`);
+      log('confirm: "' + txt('p', c) + '" | "' + txt('.cmd', c) + '"');
+      check(!!c && !runOf(CORE), 'Install in HA asks first and runs nothing yet');
+      check(/Install Home Assistant 2026\.11\.1\?/.test(txt('p', c)) && /restarts/.test(txt('p', c)) && /backup/.test(txt('p', c)), 'it says what happens: a restart, a config check, a backup');
+      check(/check_config, then update\.install update\.home_assistant_core_update 2026\.11\.1 \(backup first\)/.test(txt('.cmd', c)), 'the exact calls');
+      check(txt('[data-action="ew-go"]', c) === 'Install and restart' && c.querySelector('[data-action="ew-go"]').classList.contains(none ? 'primary' : 'danger'), 'Install and restart (red when it touches something)');
+      check(!!c.querySelector('[data-action="open-url"]') && /release-202611/.test(c.querySelector('[data-action="open-url"]').dataset.url), 'Release notes ↗ right there');
+      scrollTo(row(CORE), 40);
+    }, 2);
+    then(() => shot(SC + '-confirm-' + theme()), 8);
+    toggleTheme();
+    then(() => shot(SC + '-confirm-' + theme()), 8);
+    then(() => q(`.ew-confirm[data-id="${CORE}"] [data-action="ew-cancel"]`).click(), 2);
+    then(() => check(!q('.ew-confirm') && !runOf(CORE), 'Cancel closes it and runs nothing'), 1);
+    then(() => row(CORE).querySelector('[data-action="ew-update"]').click(), 2);
+    then(() => q(`.ew-confirm[data-id="${CORE}"] [data-action="ew-go"]`).click(), 1);
+    until(() => runOf(CORE) && /restarting, this is expected/.test(txt('.st', runOf(CORE))), 'Home Assistant goes away (expected)', () => {
+      sawRestart = true;
+      log('restarting: "' + txt('.st', runOf(CORE)) + '" log="' + txt('.ew-log', runOf(CORE)).slice(0, 200) + '"');
+      check(/check_config/.test(txt('.ew-log', runOf(CORE))) && /update\/install/.test(txt('.ew-log', runOf(CORE))), 'the stream shows check_config, then the install call');
+      check(qa('.ew-row [data-action="ew-update"]:not(:disabled)').length === 0 && qa('.ew-remove[data-action="ew-remove"]:not(:disabled)').length === 0
+        && qa('.ew-row .cb[data-action="ew-tick"]').length > 0, 'no other row action may start while core runs');
+      scrollTo(row(CORE), 40);
+      shot(SC + '-restarting-' + theme());
+    });
+    until(() => runOf(CORE) && /^ew-run (ok|fail)/.test(runOf(CORE).className), 'the core install ends', () => {
+      const r = runOf(CORE);
+      log('end: ' + r.className + ' "' + txt('.st', r) + '"');
+      check(sawRestart, 'the restart was shown as expected, not as a failure');
+      if (none) {
+        check(r.classList.contains('fail') && /came back on 2026\.10\.4, not 2026\.11\.1.*rolled back/.test(txt('.st', r)), 'back on the old version: failed, says Home Assistant rolled back');
+        check(!!r.querySelector('[data-action="ew-fix"]'), 'and offers Fix it');
+      } else {
+        check(r.classList.contains('ok') && /Home Assistant is now 2026\.11\.1 and running/.test(txt('.st', r)), 'back on the new version and running: done');
+        check(txt('.badge', row(CORE)) === 'UPDATED' && /now 2026\.11\.1/.test(txt('.ver', row(CORE))), 'the row reads UPDATED, now 2026.11.1');
+      }
+      scrollTo(row(CORE), 40);
+    });
+    then(() => shot(SC + '-done-' + theme()), 8);
+    toggleTheme();
+    then(() => shot(SC + '-done-' + theme()), 8);
   }
 
   // QA_CUT=n (env of qa-e2e.sh): run only the first n steps, to bisect a failure

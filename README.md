@@ -34,6 +34,11 @@ an eye on the software GNOME Software never sees.
   with `flatpak mask` can be tried again safely and rolled back if it breaks.
 - Other software: stale npm, pipx, uv and cargo tools, GNOME extensions, AppImages,
   containers and Home Assistant updates, each with what it is and who uses it.
+- A Home Assistant core update has its release notes read first: every breaking change
+  between your version and the new one is checked against the integrations your Home
+  Assistant uses, and installing it checks the configuration, takes a backup and waits
+  for Home Assistant to come back on the new version. Home Assistant OS, the supervisor
+  and device firmware are left to Home Assistant itself.
 - When a run fails, Fix it asks Claude Code to look at the logs and propose a fix you
   approve step by step.
 - A new Fedora release shows up as one more row, unticked, with a note on which of your

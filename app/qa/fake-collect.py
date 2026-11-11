@@ -31,6 +31,30 @@ if os.environ.get("RIVET_FAKE_SCENARIO") == "release":
     doc["flags"]["reboot_required"] = True
     doc["host"]["os"] = "Fedora Linux 44 (Workstation Edition)"
 
+if os.environ.get("RIVET_FAKE_SCENARIO") in ("hacore", "hacore-none"):
+    # 2026-11-10: the Home Assistant core row investigated by the REAL backend/ha_core.py: canned
+    # release notes and a fake Home Assistant from backend/fixtures/fake_ha.py on 127.0.0.1, and
+    # qa/fake-claude.py as claude (core-touches: MQTT is in use -> red; core-none: nothing in use is
+    # touched -> a yellow monthly release). Nothing leaves this machine.
+    backend = os.path.join(here, "..", "..", "backend")
+    sys.path[:0] = [backend, os.path.join(backend, "fixtures")]
+    none = os.environ["RIVET_FAKE_SCENARIO"] == "hacore-none"
+    os.environ.update(RIVET_CLAUDE_BIN=os.path.join(here, "fake-claude.py"),
+                      FAKE_CLAUDE_MODE="core-none" if none else "core-touches")
+    import fake_ha
+    srv = fake_ha.FakeHA(components=fake_ha.COMPONENTS_NONE if none else None).start()
+    import elsewhere, ha_core
+    ha_core.GH_RELEASES, ha_core.SITE_OVERRIDE = srv.url + "/gh/", srv.url
+    items = doc["elsewhere"]["items"]
+    row = next(i for i in items if i["id"] == "ha:update.home_assistant_core_update")
+    for k in ("core_check", "risk"):
+        row.pop(k, None)
+    row["ai"] = []
+    ha_core.investigate([row], use_ai=True, ctx=elsewhere.Ctx(env=srv.env()),
+                        log=lambda m: print(m, file=sys.stderr))
+    elsewhere.decide_action(row)
+    srv.stop()
+
 if os.environ.get("RIVET_FAKE_SCENARIO") == "held":
     backend = os.path.join(here, "..", "..", "backend")
     sys.path.insert(0, os.path.join(backend, "fixtures"))

@@ -886,6 +886,47 @@ def run():
     check(any(m.get("type") == "error" and m["msg"].startswith("Not yet: Other software is still updating") for m in out),
           "Restart now is refused while Other-software rows run")
     b._batch = None
+
+    # ------------------------------------- Home Assistant core (2026-11-10)
+    print("\nother software: HA core is tickable, never safe, runs LAST after the one HA restart, with --confirmed:")
+    core = {"id": "ha:update.home_assistant_core_update", "source": "ha", "name": "Home Assistant Core", "kind": "core",
+            "status": "ok", "severity": "minor", "action": "ha_install", "confirm": True, "warning": None}
+    osrow = {"id": "ha:update.os", "source": "ha", "name": "HA OS", "kind": "os", "status": "ok", "severity": "minor",
+             "action": "ha_install", "confirm": False, "warning": None}
+    sup = dict(osrow, id="ha:update.sup", kind="supervisor")
+    check(U.Bridge.other_tickable(core) and not U.Bridge.other_safe(core), "core: tickable, never in the safe set")
+    check(not any(U.Bridge.other_tickable(r) or U.Bridge.other_safe(r) for r in (osrow, sup, rows[6])),
+          "OS / supervisor / firmware: neither tickable nor safe, even with an install action")
+    U.write_json_atomic(U.STATE_FILE, {"schema": 1, "status": "ok", "groups": [], "summary": {"total": 0},
+                                       "elsewhere": {"items": rows + [core, osrow]}})
+    open(os.path.join(TMP, "other-calls.log"), "w").close()
+    out = []
+    b = U.Bridge(out.append)
+    b.handle(json.dumps({"cmd": "otherUpdateMany", "ids": [core["id"], "ha:update.integ", "npm:a", "ha:update.os"], "ticked": True}))
+    wait_for(lambda: any(e.get("step") == "batch" for e in oevs()) and not b.applying, 8000)
+    calls = [c for c in open(os.path.join(TMP, "other-calls.log")).read().split("\n") if c]
+    check(calls == ["--other-update ha:update.integ", "--other-update npm:a", "--ha-restart ha:_restart",
+                    "--other-update ha:update.home_assistant_core_update --confirmed"],
+          "ticked first, core still runs last: the integration, npm, the ONE HA restart, then core (%s)" % calls)
+    refused = [e["other_id"] for e in oevs() if e.get("step") == "done" and e["other"]["result"] == "refused"]
+    check(refused == ["ha:update.os"], "HA OS is refused, never run (%s)" % refused)
+    bt = [e for e in oevs() if e.get("step") == "batch"]
+    check(bt and bt[0]["batch"]["ran"] == ["ha:update.integ", "npm:a", core["id"]], "the batch lists core last")
+    out.clear()
+    open(os.path.join(TMP, "other-calls.log"), "w").close()
+    b.handle(json.dumps({"cmd": "otherUpdateMany", "ids": [core["id"], "npm:a"]}))
+    wait_for(lambda: any(e.get("step") == "batch" for e in oevs()) and not b.applying, 8000)
+    calls = [c for c in open(os.path.join(TMP, "other-calls.log")).read().split("\n") if c]
+    check(calls == ["--other-update npm:a"], "\"Update the safe ones\" never sweeps core in, and passes no --confirmed (%s)" % calls)
+    out.clear()
+    open(os.path.join(TMP, "other-calls.log"), "w").close()
+    b.handle(json.dumps({"cmd": "otherUpdate", "id": core["id"], "confirmed": True}))
+    wait_for(lambda: any(e.get("step") == "done" for e in oevs()) and not b.applying, 4000)
+    b.handle(json.dumps({"cmd": "otherUpdate", "id": core["id"]}))
+    wait_for(lambda: len([e for e in oevs() if e.get("step") == "done"]) == 2 and not b.applying, 4000)
+    calls = [c for c in open(os.path.join(TMP, "other-calls.log")).read().split("\n") if c]
+    check(calls == ["--other-update %s --confirmed" % core["id"], "--other-update %s" % core["id"]],
+          "the row's confirmation becomes --confirmed, nothing else does (%s)" % calls)
     del os.environ["RIVET_COLLECT_CMD"]
     print("\nother software: a single integration install is followed by one HA restart; otherFix:")
     fake_claude = os.path.join(TMP, "claude")            # Fix it needs a claude to exist (never run here)

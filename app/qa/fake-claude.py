@@ -38,6 +38,46 @@ if MODE == "usage":
     sys.exit(0)
 a = sys.argv[1:]
 val = lambda f: a[a.index(f) + 1] if f in a else None  # noqa: E731
+
+# 2026-11-10: the Home Assistant core check (backend/ha_core.py through triage.ask_locked): one
+# locked-down question on stdin, answered in the CLI's json envelope. Modes: core-touches (the
+# default: every breaking change whose notes link an integration in use, plus the labels change
+# for "automation" when it is in use), core-none (none touch), core-unsure, core-stray (names an
+# integration that is not in use); garbage / logged-out above apply here too.
+if val("--tools") == "" and "--output-format" in a:
+    text = sys.stdin.read()
+    sd = os.environ.get("RIVET_STATE_DIR")
+    if sd and os.path.isdir(sd):
+        with open(os.path.join(sd, "fake-claude-core.json"), "w") as fh:
+            json.dump({"argv": a, "stdin_chars": len(text), "mentions_switch": os.environ.get("CLAUDE_CODE_DISABLE_FILE_MENTIONS"),
+                       "ha_token": bool(os.environ.get("HA_TOKEN")), "cwd": os.getcwd()}, fh)
+    if not text.startswith("HA_CORE_CHECK"):
+        print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}"}))
+        sys.exit(0)
+    data = json.loads(text.split("\nDATA:\n", 1)[1])
+    use, changes = set(data["in_use"]), data["breaking_changes"]
+    mode = MODE or "core-touches"
+    touches = []
+    if mode == "core-touches":
+        for c in changes:
+            for d in c["domains"]:
+                if d in use:
+                    first = c["text"].split("\n")[0].split(";")[0].rstrip(".")
+                    touches.append({"change": c["n"], "integration": d, "what_changes": first,
+                                    "what_to_do": "Move the setting before you update."})
+            if not c["domains"] and "label" in c["title"].lower() and "automation" in use:
+                touches.append({"change": c["n"], "integration": "automation",
+                                "what_changes": "labelled config entities now follow label-targeted actions",
+                                "what_to_do": "Check which entities carry your labels."})
+    elif mode == "core-stray":
+        touches = [{"change": 1, "integration": "not_in_use_anywhere", "what_changes": "x", "what_to_do": "y"}]
+    verdict = {"core-none": "none_touch", "core-unsure": "unsure"}.get(mode, "touches" if touches else "none_touch")
+    ans = {"touches": touches, "untouched": len(changes) - len({t["change"] for t in touches}), "verdict": verdict,
+           "summary": "Canned answer from qa/fake-claude.py (%s)." % mode}
+    time.sleep(float(os.environ.get("FAKE_CLAUDE_DELAY", "0")))
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 1,
+                      "result": json.dumps(ans), "total_cost_usd": 0}))
+    sys.exit(0)
 problems = []
 if val("--model") != "opus":
     problems.append("model is %r, not opus" % val("--model"))

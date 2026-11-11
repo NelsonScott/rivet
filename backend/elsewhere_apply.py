@@ -11,8 +11,9 @@ from the UI and never passed through a shell:
   podman  podman pull <image>          (running containers keep the old image: the done
                                         event says which unit to restart; nothing restarts)
   ha      POST <ha>/api/services/update/install {entity_id[, backup]}, then poll the entity
-          until in_progress clears; only add-ons and HACS integrations (never core / OS /
-          supervisor, never device firmware)
+          until in_progress clears; add-ons and HACS integrations, and (2026-11-10, run_core)
+          Home Assistant core after check_config, confirmed, waiting out its restart; never
+          OS / supervisor, never device firmware
 
 rivet-apply --other-remove ID (2026-11-01): the Remove button of an UNUSED Home Assistant
 add-on. Supervisor `POST /addons/<slug>/uninstall` through HA's websocket (`supervisor/api`;
@@ -215,6 +216,224 @@ def ha_conn(ctx: E.Ctx) -> tuple[str, str, dict]:
     return base, token, {"Authorization": f"Bearer {token}"}
 
 
+# --------------------------------------------------------------------------- HA core (2026-11-10)
+# Installing core restarts Home Assistant: its API going away is EXPECTED, for up to this long.
+HA_CORE_TIMEOUT_S = float(os.environ.get("RIVET_HA_CORE_TIMEOUT_S", "1800"))
+# not down, not in progress and still the old version this long after the install call = it did not start
+HA_CORE_IDLE_S = float(os.environ.get("RIVET_HA_CORE_IDLE_S", "180"))
+CORE_LOCK = "ha-core-update.lock"
+
+
+def core_lock_path() -> Path:
+    return STATE_PATH.parent / CORE_LOCK
+
+
+def core_running() -> int | None:
+    """The pid of ANOTHER rivet-apply that is installing Home Assistant core right now, else None.
+    While it runs no other Home Assistant row action may start (CONTRACT "HA core")."""
+    try:
+        pid = int(core_lock_path().read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    if pid == os.getpid():
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        return pid
+    return pid
+
+
+CORE_BUSY = "Home Assistant core is being updated right now; wait until it is back"
+
+
+def _core_lock(take: bool) -> None:
+    p = core_lock_path()
+    try:
+        if take:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(f"{os.getpid()} {now_iso()}\n")
+        elif p.exists() and p.read_text().split()[:1] == [str(os.getpid())]:
+            p.unlink()
+    except OSError:
+        pass
+
+
+def _nothing_sent(exc: BaseException) -> bool:
+    """The connection never opened (refused, no route, no such name): the request was not sent.
+    A reset or a timeout AFTER the request went out may be Home Assistant going down to install."""
+    r = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    import errno as _e
+    import socket as _s
+    if isinstance(r, (_s.gaierror, ConnectionRefusedError)):
+        return True
+    return isinstance(r, OSError) and getattr(r, "errno", None) in (_e.EHOSTUNREACH, _e.ENETUNREACH, _e.EHOSTDOWN)
+
+
+def _dur(s: float) -> str:
+    return f"{int(s // 60)} min" if s >= 120 else f"{int(s)} s"
+
+
+def run_core(em, it: dict, *, ctx: E.Ctx | None = None, sleep=time.sleep, confirmed: bool = False) -> int:
+    """Install Home Assistant core, carefully (CONTRACT "Home Assistant core, investigated"):
+      1. only a row the user confirmed (the bridge passes --confirmed after the in-row confirmation
+         or for a row ticked for Update now), never from a bulk "safe ones" run;
+      2. check_config first: anything but `valid` stops here, nothing installed;
+      3. update.install with backup: true where the entity supports it (else the stream says so);
+      4. wait patiently: the API going away (refused, 5xx, timeouts) is expected while it restarts,
+         up to HA_CORE_TIMEOUT_S; success = the API is back, HA says RUNNING and its version is the
+         target; back on the old version after it went down = HA rolled back = failed."""
+    if it.get("source") != "ha" or it.get("kind") != "core" or it.get("action") != "ha_install":
+        raise Refused(f"{it.get('name')}: only an installable Home Assistant core row comes here.")
+    if not confirmed:
+        raise Refused(f"{it.get('name')}: Home Assistant core is installed only after you confirm it in its row "
+                      "(it restarts Home Assistant).")
+    eid = str(it.get("entity_id") or "")
+    if not re.match(r"^update\.[a-z0-9_]+$", eid):
+        raise Refused(f"refusing an odd entity id: {eid!r}")
+    other = core_running()
+    if other:
+        raise Refused(f"{CORE_BUSY} (rivet-apply {other}).")
+    ctx = ctx or E.Ctx(env=os.environ)
+    base, _token, auth = ha_conn(ctx)
+    target = str(it.get("latest") or "")
+    if not target:
+        raise Refused(f"{it.get('name')}: no target version in the list (check again first).")
+    _core_lock(True)
+    try:
+        return _run_core(em, it, ctx, base, auth, eid, target, sleep)
+    finally:
+        _core_lock(False)
+
+
+def _run_core(em, it, ctx, base, auth, eid, target, sleep) -> int:
+    t_start = time.monotonic()
+    try:
+        live = ctx.http_json(f"{base}/api/states/{eid}", headers=auth, timeout=10) or {}
+    except Exception as exc:  # noqa: BLE001
+        if E.unreachable(exc):
+            return _ha_fail(em, it, f"could not reach Home Assistant at {base} ({E._why(exc)}); nothing was installed",
+                            unreachable=True)
+        live = {}
+    la = (live.get("attributes") or {}) if isinstance(live, dict) else {}
+    if la.get("installed_version") and not la.get("in_progress") and not E.is_newer(la.get("installed_version"), target):
+        return _core_ok(em, it, la.get("installed_version"), t_start, already=True)
+    feats = int(la.get("supported_features") or 0)
+    em.emit(STEP, "start", 0, "Checking Home Assistant's configuration first…",
+            f"POST {base}/api/config/core/check_config")
+    try:
+        chk = ctx.http_json(f"{base}/api/config/core/check_config", headers=auth, data={}, timeout=90) or {}
+    except Exception as exc:  # noqa: BLE001
+        return _ha_fail(em, it, f"the configuration check did not answer ({E._why(exc)}); nothing was installed",
+                        unreachable=E.unreachable(exc))
+    if chk.get("result") != "valid":
+        return _ha_fail(em, it, "Home Assistant's configuration does not check out "
+                        f"({str(chk.get('errors') or chk.get('result'))[:200]}); nothing was installed")
+    data = {"entity_id": eid}
+    if feats & E.HA_SPECIFIC_VERSION:
+        data["version"] = target
+    if feats & E.HA_BACKUP or (not la and it.get("backup")):
+        data["backup"] = True
+        em.emit(STEP, "progress", None, "Configuration is valid. Home Assistant takes a backup first, then installs "
+                f"{target}…", None)
+    else:
+        em.emit(STEP, "progress", None, "Configuration is valid. This Home Assistant cannot take a backup as part of "
+                f"the update, so it installs {target} without one, as you confirmed.", None)
+    em.emit(STEP, "progress", None, f"Asking Home Assistant to install {target}…",
+            f"POST {base}/api/services/update/install {json.dumps(data)}")
+    try:
+        ctx.http_json(f"{base}/api/services/update/install", headers=auth, data=data, timeout=30)
+    except E.HttpError as exc:
+        if exc.status < 500:
+            return _ha_fail(em, it, f"Home Assistant refused the install ({exc})")
+        em.emit(STEP, "progress", None, "Home Assistant is going down to install it…", f"({exc})")
+    except Exception as exc:  # noqa: BLE001
+        if _nothing_sent(exc):
+            return _ha_fail(em, it, f"could not reach Home Assistant at {base} ({E._why(exc)}); nothing was installed",
+                            unreachable=True)
+        # the request went out and the connection dropped or timed out: Home Assistant is busy with it
+        em.emit(STEP, "progress", None, "Home Assistant is working on it…", f"({E._why(exc)})")
+    t0 = time.monotonic()
+    down_since, saw_down, saw_progress, old_back, said_min = None, False, False, 0, -1
+    idle_since, last_state = None, None
+    while True:
+        el = time.monotonic() - t0
+        if el > HA_CORE_TIMEOUT_S:
+            if saw_down:
+                return _ha_fail(em, it, f"Home Assistant has not come back after {_dur(HA_CORE_TIMEOUT_S)}; "
+                                "open it (or the VM console) to see what happened", unreachable=True)
+            return _ha_fail(em, it, f"Home Assistant did not finish installing {target} within "
+                            f"{_dur(HA_CORE_TIMEOUT_S)}; it may still finish, check again later")
+        sleep(HA_POLL_S)
+        try:
+            cfg = ctx.http_json(f"{base}/api/config", headers=auth, timeout=10) or {}
+        except E.HttpError as exc:
+            if exc.status in (401, 403):
+                return _ha_fail(em, it, f"Home Assistant refused the token while it came back ({exc})")
+            cfg = None
+        except Exception:  # noqa: BLE001 - refused / reset / timed out: it is restarting
+            cfg = None
+        if cfg is None:
+            if not saw_down:
+                em.emit(STEP, "progress", None, "Home Assistant is restarting, this is expected. Rivet waits for it "
+                        f"(up to {_dur(HA_CORE_TIMEOUT_S)})…", None)
+            saw_down, down_since = True, down_since or time.monotonic()
+            mins = int((time.monotonic() - down_since) // 60)
+            if mins >= 1 and mins != said_min:
+                said_min = mins
+                em.emit(STEP, "progress", None, f"Still restarting ({mins} min). This is expected; Rivet keeps waiting…", None)
+            old_back = 0
+            continue
+        state = str(cfg.get("state") or "")
+        version = cfg.get("version")
+        a = {}
+        try:
+            a = (ctx.http_json(f"{base}/api/states/{eid}", headers=auth, timeout=10) or {}).get("attributes") or {}
+        except Exception:  # noqa: BLE001 - /api/config is the authority; the entity is extra
+            a = {}
+        if a.get("in_progress") and not saw_down:
+            saw_progress, idle_since = True, None
+            pct = a.get("update_percentage")
+            msg = "Home Assistant is preparing the update (backup and download)…" + (
+                f" {int(pct)}%" if isinstance(pct, (int, float)) else "")
+            if msg != last_state:
+                em.emit(STEP, "progress", None, msg, None)
+            last_state = msg
+            continue
+        if state != "RUNNING":
+            if state != last_state:
+                em.emit(STEP, "progress", None, f"Home Assistant answers again and is starting ({state.lower() or 'not running yet'})…", None)
+            last_state = state
+            continue
+        running = version or a.get("installed_version")
+        if running and not E.is_newer(running, target):
+            return _core_ok(em, it, running, t_start)
+        if saw_down:
+            old_back += 1
+            if old_back >= 3:
+                return _ha_fail(em, it, f"Home Assistant came back on {running}, not {target}: the update did not "
+                                "take and Home Assistant rolled back to the old version")
+            continue
+        idle_since = idle_since or time.monotonic()
+        if time.monotonic() - idle_since >= HA_CORE_IDLE_S:
+            return _ha_fail(em, it, f"Home Assistant never started installing it (still {running}, wanted {target}); "
+                            "see Settings › System › Logs" + ("" if not saw_progress else " (it began, then stopped)"))
+
+
+def _core_ok(em, it: dict, version, t_start: float, *, already: bool = False) -> int:
+    mins = int((time.monotonic() - t_start) // 60)
+    msg = (f"Home Assistant was already on {version}." if already else
+           f"Home Assistant is now {version} and running" + (f" ({mins} min)." if mins else "."))
+    row = updated_row(it, str(version), result="installed", note=None)
+    em.emit(STEP, "ok", 100, msg, None)
+    patch_state(row)
+    em.done("ok", reboot_required=False, kmod_verified=None, summary=msg,
+            other={"id": it["id"], "result": "installed", "item": row})
+    return 0
+
+
 def run_ha(em, it: dict, *, ctx: E.Ctx | None = None, sleep=time.sleep) -> int:
     """update.install for one add-on / HACS integration, judged against the version the row
     asked for. 2026-11-01 (Alexa Media Player): HACS downloaded v5.18.0 in 2 s and refreshed
@@ -226,7 +445,7 @@ def run_ha(em, it: dict, *, ctx: E.Ctx | None = None, sleep=time.sleep) -> int:
     integration that needs a restart says so (`restart_pending`; the app restarts Home
     Assistant once afterwards with `--ha-restart`)."""
     if it.get("action") != "ha_install" or it.get("kind") not in ("addon", "integration"):
-        raise Refused(f"{it.get('name')}: Home Assistant core, OS, supervisor and firmware are "
+        raise Refused(f"{it.get('name')}: Home Assistant OS, supervisor and firmware are "
                       "updated by hand in Home Assistant.")
     eid = str(it.get("entity_id") or "")
     if not re.match(r"^update\.[a-z0-9_]+$", eid):
@@ -390,6 +609,8 @@ def run_ha_restart(em, state: dict, *, ctx: E.Ctx | None = None, sleep=time.slee
     HA's own config check passes; wait until it is RUNNING again and confirm the loaded versions.
     Never restarts the VM or the OS."""
     ctx = ctx or E.Ctx(env=os.environ)
+    if core_running():
+        return _restart_done(em, "refused", CORE_BUSY, [])
     try:
         base, token, auth = ha_conn(ctx)
         ws = ctx.ha_ws(base, token)
@@ -597,11 +818,15 @@ def _remove_fail(em, it: dict, why: str) -> int:
     return 1
 
 
-def run(em, item_id: str, state: dict, *, remove: bool = False) -> int:
+def run(em, item_id: str, state: dict, *, remove: bool = False, confirmed: bool = False) -> int:
     try:
         it = find_item(state, item_id)
+        if it.get("source") == "ha" and core_running():
+            raise Refused(f"{it.get('name')}: {CORE_BUSY}.")
         if remove:
             return run_remove(em, it)
+        if it.get("source") == "ha" and it.get("kind") == "core":
+            return run_core(em, it, confirmed=confirmed)
         if it.get("source") == "ha":
             return run_ha(em, it)
         return run_local(em, it)

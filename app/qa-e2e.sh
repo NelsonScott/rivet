@@ -21,7 +21,9 @@
 # qa/fake-claude.py instead of claude); "other-tick" / "other-tick-fail" / "other-tick-only"
 # (2026-11-10) tick Other-software rows for Update now (system run first, then the rows on the
 # result screen; a failed system run keeps them ticked; only Other rows: no system run at all; the
-# bridge's start order is checked in its log); "other-real" looks at THIS box's state.json, presses
+# bridge's start order is checked in its log); "other-hacore" / "other-hacore-none" (2026-11-10) show the
+# investigated Home Assistant core row (red: touches MQTT / amber: none touch), its confirmation, the
+# expected restart and the outcome (back on the new version / rolled back); "other-real" looks at THIS box's state.json, presses
 # nothing. other / other-row / other-bulk run with show_containers on in the scratch settings.json. "looks" picks every look x light/dark through Preferences > Look and scans the painted
 # text contrast (qa/driver-looks.js); "looks-real" shoots the looks on THIS box's state.json.
 # "steam" (2026-11-10) drives the Steam-only re-check (qa/driver-steam.js): focus and Quit Steam
@@ -35,7 +37,7 @@
 set -u
 . "$(dirname "$(readlink -f "$0")")/qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-e2e}; mkdir -p "$OUT/shots"; shift || true
-SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix other-tick other-tick-fail other-tick-only looks abuse abuse-noclaude second-instance release steam}
+SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix other-tick other-tick-fail other-tick-only other-hacore other-hacore-none looks abuse abuse-noclaude second-instance release steam}
 HERE=$(dirname "$(readlink -f "$0")")
 
 gnome-shell --headless --wayland --no-x11 --virtual-monitor 1280x860 > "$OUT/shell.log" 2>&1 &
@@ -145,6 +147,15 @@ for SC in $SCENARIOS; do
     HOME="$QAHOME" RIVET_STATE_DIR="$QAHOME/.local/state/rivet" RIVET_FAKE_SCENARIO=release \
       RIVET_NO_NOTIFY=1 python3 "$HERE/qa/fake-collect.py"
   fi
+  case "$SC" in other-hacore|other-hacore-none)
+    # 2026-11-10: Home Assistant core. fake-collect runs the REAL ha_core.py investigation (canned notes,
+    # fake_ha.py, qa/fake-claude.py) before the app starts; Install in HA runs the REAL run_core through
+    # fake-apply.py against a fake_ha.py that goes away and comes back (hacore: new version; hacore-none:
+    # rolled back). Nothing leaves 127.0.0.1.
+    DRIVER=$HERE/qa/driver-other.js; LIMIT=130; APPLY_SC=${SC#other-}
+    HOME="$QAHOME" RIVET_STATE_DIR="$QAHOME/.local/state/rivet" RIVET_FAKE_SCENARIO=$APPLY_SC \
+      RIVET_NO_NOTIFY=1 python3 "$HERE/qa/fake-collect.py" ;;
+  esac
   if [ "$SC" = held ]; then
     DRIVER=$HERE/qa/driver-held.js; LIMIT=110
     # the trial reads state.json from disk, so the fake collector runs once before the app
@@ -255,6 +266,11 @@ for SC in $SCENARIOS; do
       n=$(grep -c "refresh: deferred until the ticked" "$LOG")
       echo "$SC: the post-apply check waited for the ticked rows: $n (want 1)"; [ "$n" = 1 ] || EXTRA=bad
     fi ;;
+  esac
+  case "$SC" in other-hacore|other-hacore-none)
+    n=$(grep -c "other update: .*--other-update ha:update.home_assistant_core_update --confirmed" "$LOG")
+    echo "$SC: bridge ran the core install with --confirmed $n time(s) (want 1)"; [ "$n" = 1 ] || EXTRA=bad
+    if python3 -c "import json,sys; r=[p for m,p in json.load(open(sys.argv[1])) if m=='POST']; print('$SC: fake HA got POSTs:', r); sys.exit(r != ['/api/config/core/check_config','/api/services/update/install'])" "$QAHOME/.local/state/rivet/fake-ha-requests.json"; then :; else EXTRA=bad; fi ;;
   esac
   if [ "$SC" = other-bulk ]; then
     n=$(grep -c "other restart: .*--ha-restart" "$LOG")

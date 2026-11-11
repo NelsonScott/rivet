@@ -146,6 +146,25 @@ if "--ha-restart" in sys.argv:
     out({"step": "done", "status": "ok", "summary": msg, "other": {"id": "ha:_restart", "result": "restarted", "item": None, "items": done}})
     sys.exit(0)
 
+if "--other-update" in sys.argv and sys.argv[sys.argv.index("--other-update") + 1] == "ha:update.home_assistant_core_update":
+    # Home Assistant core (2026-11-10): the REAL elsewhere_apply.run (check_config, backup, the
+    # patient wait) against backend/fixtures/fake_ha.py on 127.0.0.1, which really goes away and
+    # comes back: on the new version (scenario hacore and anything else) or on the old one
+    # (hacore-none: the Supervisor rolled back). Its requests land in fake-ha-requests.json.
+    backend = os.path.join(HERE, "..", "..", "backend")
+    sys.path[:0] = [backend, os.path.join(backend, "fixtures")]
+    import fake_ha
+    story = "rollback" if os.environ.get("RIVET_FAKE_SCENARIO") == "hacore-none" else "ok"
+    srv = fake_ha.FakeHA(story, down_s=4.0, progress_polls=2).start()
+    os.environ.update(srv.env(), RIVET_HA_POLL_S="0.5")
+    import rivet_apply
+    rc = rivet_apply.main(sys.argv[1:])
+    sd = os.environ.get("RIVET_STATE_DIR") or os.path.expanduser("~/.local/state/rivet")
+    with open(os.path.join(sd, "fake-ha-requests.json"), "w") as fh:
+        json.dump([[m, p] for m, p, _d in srv.requests], fh)
+    srv.stop()
+    sys.exit(rc)
+
 if "--other-update" in sys.argv:
     # Other software's Update / Install in HA (2026-10-31 b): a canned stream for the row,
     # nothing runs. The nginx image row always fails (the driver checks the red path).

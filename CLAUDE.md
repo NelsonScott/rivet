@@ -56,6 +56,11 @@ rivet-updater --demo                                    # serves app/ui/sample-s
   offers a reboot (`kmod_verified`).
 - Other software rows are rebuilt from state.json on apply; the UI never sends a
   command line. Containers that hold data never get an Update button.
+- Home Assistant core (2026-11-10, `backend/ha_core.py`): its release notes are read and
+  judged against the integrations in use (patch/monthly in code, the model may only raise);
+  installing needs `--confirmed`, checks the config, waits out the restart, never runs in a
+  safe-ones batch and runs last in a ticked one. HA OS / supervisor / firmware stay Open only.
+  QA: `backend/fixtures/fake_ha.py`, e2e `other-hacore` / `other-hacore-none`.
 - A newer Fedora (`backend/release.py`) is one unticked dnf row; rivet-apply only
   downloads it, last; `--release-reboot` is the one command that restarts the machine.
 - Looks (`app/ui/looks/`) only re-point CSS custom properties; see its README.

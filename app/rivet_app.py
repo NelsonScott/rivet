@@ -1561,6 +1561,10 @@ class Bridge:
             return False
         else:
             argv = [APPLY_BIN, flag, rid]
+        if flag == "--other-update" and msg.get("confirmed") is True:
+            # 2026-11-10: HA core installs only with this (the row's confirmation, or ticked for
+            # Update now); rivet-apply refuses core without it. Harmless for any other row.
+            argv.append("--confirmed")
         log("other %s: %s" % ({"--other-remove": "remove", "--other-fix": "fix", "--ha-restart": "restart"}
                               .get(flag, "update"), " ".join(argv)))
         try:
@@ -1591,11 +1595,17 @@ class Bridge:
 
     # Rows ticked for "Update now" (2026-11-10, `ticked: true`): the same queue, but an id only has
     # to be updatable from its own row (the per-row Update / Install in HA), not safe: ticking it
-    # was the confirmation. HA core / OS / supervisor / firmware and Open / Copy rows still never run.
+    # was the confirmation. HA OS / supervisor / firmware and Open / Copy rows still never run.
+    # HA core (2026-11-10, later the same day) is tickable: it runs LAST, after the add-ons and
+    # integrations and their one Home Assistant restart, with --confirmed.
     @staticmethod
     def other_tickable(it):
         return bool(it) and (it.get("status") == "ok" and it.get("action") in ("update", "ha_install")
-                             and it.get("kind") not in ("core", "os", "supervisor", "firmware"))
+                             and it.get("kind") not in ("os", "supervisor", "firmware"))
+
+    @staticmethod
+    def is_core(it):
+        return bool(it) and it.get("source") == "ha" and it.get("kind") == "core"
 
     TICK_WAIT_MS = 30000
 
@@ -1632,6 +1642,10 @@ class Bridge:
                 self._other_push_done(rid, ("Not run: %s cannot be updated from Rivet now (or is gone)." if ticked else
                                             "Not part of a bulk update: %s needs its own click (or is gone).") % name,
                                       result="refused", clear=False)
+        # Home Assistant core goes last: it restarts Home Assistant, so every other row (and the one
+        # restart the integrations need) is done first; the order is otherwise the ticked one
+        b["queue"].sort(key=lambda rid: self.is_core(rows.get(rid)))
+        b["core"] = [rid for rid in b["queue"] if self.is_core(rows.get(rid))]
         log("other update many%s: %d to run, %d refused" % (" (ticked)" if ticked else "", len(b["queue"]), len(b["refused"])))
         self._batch = b
         self._batch_next()
@@ -1649,7 +1663,8 @@ class Bridge:
         b = self._batch
         if b is None:
             return False
-        if (b["stop"] or not b["queue"]) and b["restart"] and not b["restarted"] and not b["ha_down"]:
+        core_next = bool(b["queue"]) and not b["stop"] and b["queue"][0] in (b.get("core") or [])
+        if (b["stop"] or not b["queue"] or core_next) and b["restart"] and not b["restarted"] and not b["ha_down"]:
             # an integration from this run waits for a restart: ONE restart for the whole run
             b["restarted"] = True
             log("other update many: restarting Home Assistant once for the integrations")
@@ -1674,7 +1689,8 @@ class Bridge:
             GLib.idle_add(self._batch_next)
             return False
         b["ran"].append(rid)
-        if not self.cmd_otherUpdate({"id": rid}):
+        # ticking HA core was its confirmation (the page asks before it ticks it); other rows need none
+        if not self.cmd_otherUpdate({"id": rid, "confirmed": b.get("ticked") is True and rid in (b.get("core") or [])}):
             # it never started (busy, spawn error): its done is already pushed, go on
             GLib.idle_add(self._batch_next)
         return False
@@ -1796,6 +1812,13 @@ class Bridge:
                ("progress", 40, "Installing %s… 40%%" % name if ha else "fetching %s@%s" % (name, to), None),
                ("progress", None, "changed 1 package in 2s (demo, nothing ran)", "changed 1 package in 2s (demo, nothing ran)"),
                ("ok", 100, "%s is now %s. (demo)" % (name, to), None)]
+        if ha and it.get("kind") == "core":      # 2026-11-10: what a core install looks like
+            seq = [("start", 0, "Checking Home Assistant's configuration first… (demo)", "POST /api/config/core/check_config"),
+                   ("progress", 10, "Configuration is valid. Home Assistant takes a backup first, then installs %s… (demo)" % to, None),
+                   ("progress", 12, "Asking Home Assistant to install %s… (demo)" % to, cmd),
+                   ("progress", 40, "Home Assistant is restarting, this is expected. Rivet waits for it (up to 30 min)… (demo)", None),
+                   ("progress", 70, "Home Assistant answers again and is starting (starting)… (demo)", None),
+                   ("ok", 100, "Home Assistant is now %s and running. (demo)" % to, None)]
         self.applying = True
 
         def step(i):

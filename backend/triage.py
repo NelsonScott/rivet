@@ -167,24 +167,32 @@ def neutralize_mentions(text: str) -> str:
     return text.replace("@", "@\u200b")
 
 
-def _ask_claude_cli(payload: list[dict]) -> str:
-    """Ask the Claude Code CLI. Returns the assistant's text.
+# What a locked-down call must never carry into the CLI's environment: a paid-API key (Rivet runs
+# on the subscription only) or the Home Assistant token (2026-11-10: the HA core check runs
+# inside rivet-collect, which may have HA_TOKEN in its environment).
+_DROP_ENV = ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "HA_TOKEN")
+
+
+def ask_locked(prompt: str, *, model: str = "sonnet", timeout: float = CLAUDE_TIMEOUT) -> str:
+    """ONE `claude -p` on text that is partly third-party (release notes, package notes):
+    no tools, no MCP servers, no settings files, no slash commands, no session kept, the
+    prompt on stdin with every "@" defused, run outside any project tree. Returns the
+    assistant's text; raises on any failure. Used by triage and the HA core check.
 
     The CLI exits 0 even for API failures (rate limits, quota), reporting them
     inside the JSON envelope as is_error/api_error_status, so both the exit
     code and the envelope have to be checked.
     """
-    prompt = SYSTEM_PROMPT + "\n\nCLUSTERS:\n" + json.dumps({"clusters": payload})
+    env = {k: v for k, v in os.environ.items() if k not in _DROP_ENV}
     cp = subprocess.run(
-        # Log/package text is partly third-party; triage needs no tools, so allow none.
-        [claude_bin(), "-p", "--model", "sonnet", "--output-format", "json", "--no-session-persistence",
+        [claude_bin(), "-p", "--model", model, "--output-format", "json", "--no-session-persistence",
          "--tools", "", "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands"],
         input=neutralize_mentions(prompt),
         capture_output=True,
         text=True,
-        timeout=CLAUDE_TIMEOUT,
+        timeout=timeout,
         cwd=tempfile.gettempdir(),
-        env={**os.environ, **NO_MENTIONS_ENV},
+        env={**env, **NO_MENTIONS_ENV},
     )
     raw = (cp.stdout or "").strip()
     if not raw:
@@ -206,6 +214,13 @@ def _ask_claude_cli(payload: list[dict]) -> str:
     if not text:
         raise RuntimeError("claude cli returned an envelope with no result text")
     return text
+
+
+def _ask_claude_cli(payload: list[dict]) -> str:
+    """Ask the Claude Code CLI about a batch of clusters. Returns the assistant's text.
+    Log/package text is partly third-party; triage needs no tools, so it gets none."""
+    return ask_locked(SYSTEM_PROMPT + "\n\nCLUSTERS:\n" + json.dumps({"clusters": payload}),
+                      model="sonnet", timeout=CLAUDE_TIMEOUT)
 
 
 # ------------------------------------------------------------------ parsing

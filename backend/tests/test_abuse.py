@@ -505,6 +505,49 @@ class TriageLockdown(unittest.TestCase):
         self.assertNotIn(str(sd), " ".join(argv), "the prompt goes on stdin, not the command line")
         self.assertNotEqual((sd / "cwd").read_text().strip(), str(REPO), "never runs inside a project tree")
 
+    def test_ha_core_check_has_the_same_lockdown_and_no_token(self):
+        """2026-11-10: the HA core check sends release notes (third-party text, with an "@~/.ssh"
+        planted in the canned post) through the same locked-down call; the HA token that
+        rivet-collect may hold in its environment never reaches the CLI."""
+        import fake_ha
+        import ha_core
+        sd = Path(tempfile.mkdtemp(prefix="rivet-corelock-"))
+        fake = sd / "claude"
+        fake.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {sd}/argv\npwd > {sd}/cwd\n"
+                        f"printf '%s' \"$CLAUDE_CODE_DISABLE_FILE_MENTIONS\" > {sd}/switch\n"
+                        f"printf '%s' \"$HA_TOKEN$ANTHROPIC_API_KEY\" > {sd}/secrets\ncat > {sd}/stdin\n"
+                        "echo '{\"type\":\"result\",\"is_error\":false,\"result\":\"{\\\"verdict\\\":\\\"none_touch\\\",\\\"touches\\\":[],\\\"untouched\\\":4}\"}'\n")
+        fake.chmod(0o755)
+        srv = fake_ha.FakeHA().start()
+        old = (ha_core.GH_RELEASES, ha_core.SITE_OVERRIDE)
+        ha_core.GH_RELEASES, ha_core.SITE_OVERRIDE = srv.url + "/gh/", srv.url
+        saved = {k: os.environ.get(k) for k in ("RIVET_CLAUDE_BIN", "HA_TOKEN", "ANTHROPIC_API_KEY")}
+        os.environ.update(RIVET_CLAUDE_BIN=str(fake), HA_TOKEN=fake_ha.TOKEN, ANTHROPIC_API_KEY="sk-not-for-claude")
+        try:
+            ha_core.cache_path().unlink(missing_ok=True)
+            it = E.decide_action(E.row("ha", "Home Assistant Core", "2026.10.4", "2026.11.1", kind="core", installable=True,
+                                       entity_id="update.home_assistant_core_update", key="update.home_assistant_core_update"))
+            ha_core.investigate([it], use_ai=True, ctx=E.Ctx(env={"HA_URL": srv.url, "HA_TOKEN": fake_ha.TOKEN}))
+        finally:
+            srv.stop()
+            ha_core.GH_RELEASES, ha_core.SITE_OVERRIDE = old
+            for k, v in saved.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        self.assertEqual(it["core_check"]["status"], "checked", it["core_check"].get("reason"))
+        argv = (sd / "argv").read_text().split("\n")
+        self.assertEqual(argv[argv.index("--tools") + 1], "", "no built-in tools at all")
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "", "no user or project settings")
+        for flag in ("--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"):
+            self.assertIn(flag, argv)
+        self.assertNotIn("--bare", argv)
+        self.assertEqual((sd / "switch").read_text(), "1", "the CLI's own file-mention switch is set")
+        self.assertEqual((sd / "secrets").read_text(), "", "neither the HA token nor an API key reaches the CLI")
+        sent = (sd / "stdin").read_text()
+        self.assertIn("ssh", sent, "the notes still reach the model")
+        self.assertNotRegex(sent, r"@[/~\w]", "an @ is never directly followed by a path")
+        self.assertNotIn(fake_ha.TOKEN, sent + " ".join(argv), "the token is not in the prompt either")
+        self.assertNotEqual((sd / "cwd").read_text().strip(), str(REPO), "never runs inside a project tree")
+
 
 class UpdateDays(unittest.TestCase):
     def test_a_zero_update_day(self):
@@ -786,7 +829,7 @@ class Privilege(unittest.TestCase):
 
     def test_other_software_health_and_collect_never_escalate(self):
         for name in ("elsewhere.py", "elsewhere_apply.py", "other_fix.py", "health.py", "rivet_collect.py",
-                     "sources.py", "know.py", "triage.py"):
+                     "sources.py", "know.py", "triage.py", "ha_core.py"):
             code = "\n".join(ln.split("#", 1)[0] for ln in (BACKEND / name).read_text().splitlines())
             self.assertNotRegex(code, r"\bpkexec\b|\bsudo\b|root_prefix", name)
 

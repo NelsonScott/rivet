@@ -105,6 +105,10 @@ def tool_cmd() -> str:
 def verbs_for(it: dict) -> list[str]:
     if it.get("source") == "ha" and it.get("kind") == "integration":
         return ["state", "logs", "retry", "restart", "reload"]
+    if it.get("source") == "ha" and it.get("kind") == "core":
+        # 2026-11-10: installing core again restarts Home Assistant and needs the user's
+        # confirmation, so Fix it on a failed core install only reads and explains
+        return ["state", "logs"]
     return ["state", "logs", "retry"]
 
 
@@ -156,6 +160,11 @@ def apply_excerpt(item_id: str, path: Path | None = None, limit: int = APPLY_LIN
 
 def _terms(it: dict, domain: str | None) -> list[str]:
     out = {"hacs", "restart"}
+    if it.get("kind") == "core":
+        # a failed core update: what HA said while it (re)started, and the integrations the
+        # release check said the update touches
+        out |= {"error", "setup of", "failed", "backup", "update", "rollback", "safe mode", "recovery mode"}
+        out |= {str(t.get("domain")) for t in ((it.get("core_check") or {}).get("touches") or []) if t.get("domain")}
     if domain:
         out.add(domain.lower())
     if it.get("entity_id"):
@@ -246,7 +255,7 @@ def canned_doc() -> dict | None:
 
 # --------------------------------------------------------------------------- payload
 ROW_KEYS = ("id", "source", "name", "kind", "installed", "latest", "severity", "entity_id", "status",
-            "restart_pending", "where", "command", "last_run")
+            "restart_pending", "where", "command", "last_run", "core_check")
 
 
 def build_payload(it: dict, ev: dict) -> dict:
@@ -303,8 +312,7 @@ def dry_checks(it: dict, ev: dict, payload: dict, argv: list[str], env: dict) ->
     """What --dry-run asserts (and the unit tests with it)."""
     p, out = payload["prompt"], []
     chk = lambda ok, what: out.append((bool(ok), what))  # noqa: E731
-    want = ["state", "logs", "retry", "restart", "reload"] if (it.get("source") == "ha" and it.get("kind") == "integration") \
-        else ["state", "logs", "retry"]
+    want = verbs_for(it)
     chk(payload["verbs"] == want, f"tool budget is {'/'.join(want)}")
     chk(payload["allowed"] == [f"Bash({tool_cmd()} --fix-tool {v} {it['id']})" for v in want],
         "each tool is one exact command for this row")
@@ -355,6 +363,8 @@ def run(em, item_id: str, state: dict, *, dry: bool = False, ctx: E.Ctx | None =
         if row.get("id") == item_id:
             it = row                      # the canned story, whatever the live row says now
     why = refusal(it, item_id)
+    if not why and not dry and (it or {}).get("source") == "ha" and EA.core_running():
+        why = f"{it.get('name')}: {EA.CORE_BUSY}."
     if why:
         em.done("fail", reboot_required=False, kmod_verified=None, summary=why, cause=why,
                 other={"id": item_id, "result": "refused", "item": None})

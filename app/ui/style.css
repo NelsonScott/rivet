@@ -534,6 +534,14 @@ input{font-family:var(--font)}
 :root[data-theme="light"] .ew-used .lbl{color:var(--fg-3)}
 .ai-tag{display:inline-block;font:700 9.5px/1 var(--font);letter-spacing:.05em;padding:2px 4px;margin-left:4px;border-radius:4px;
   color:var(--accent-text);background:var(--accent-bg);vertical-align:1px}
+.ai-tag.lead{margin:0 6px 0 0}
+/* HA core's release check (2026-11-10): the verdict, the changes that touch something in use */
+.ew-confirm .bad,.ew-core-line.bad{color:var(--red-text);font-weight:600}
+.ew-core-confirm{border-color:var(--card-line);background:var(--field)}
+.ew-core-touches{margin:2px 0 8px;padding-left:18px;line-height:1.45}
+.ew-core-touches li{margin:2px 0}
+.ew-core-touches .todo{color:var(--fg-3)}
+.ew-core-line{color:var(--fg)}
 .ew-warn{font-size:12.5px;line-height:1.45;color:var(--yellow);font-weight:600}
 .ew-expand .small{font-size:12px;color:var(--fg-3);margin-top:6px}
 .ew-expand .notes{margin-top:8px;white-space:pre-wrap;word-break:break-all}

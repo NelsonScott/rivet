@@ -53,6 +53,7 @@
     ewOpen: new Set(),          // Other-software row ids whose details are open (not pruned by state pushes)
     ewRuns: {},                 // Other-software row id -> {phase: running|done, lines, msg, pct, ok, summary, restart}
     ewConfirm: null,            // the row id whose major-update confirmation is open
+    ewConfirmTick: null,        // 2026-11-10: that confirmation ticks HA core for Update now instead of installing
     ewBulkAsk: null,            // {group, ids}: the "Update the safe ones" confirmation on screen
     ewRemoveAsk: null,          // the row id whose Remove confirmation is on screen (otherRemove)
     ewBatch: null,              // {group, ids, done, stopping}: a bulk run in progress (otherUpdateMany)
@@ -867,13 +868,18 @@
   // Ticked for Update now (2026-11-10, same rule as Bridge.other_tickable): a row whose own button
   // is Update / Install in HA. Unticked by default, and no Select all / Safe only / Security only
   // ever ticks one: only a click on its checkbox does, so a major version is never swept in.
+  // HA core (2026-11-10) is tickable too, after its own confirmation (ew-tick opens it), and runs last.
   function ewTickable(it) {
-    return !!it && it.status === 'ok' && (it.action === 'update' || it.action === 'ha_install') && !/^(core|os|supervisor|firmware)$/.test(it.kind || '');
+    return !!it && it.status === 'ok' && (it.action === 'update' || it.action === 'ha_install') && !/^(os|supervisor|firmware)$/.test(it.kind || '');
   }
+  function ewCore(it) { return !!it && it.source === 'ha' && it.kind === 'core'; }
   function ewItemById(id) { return ewItems().find(i => i.id === id) || null; }
   function ewTickedIds() { return [...state.ewTicked].filter(id => ewTickable(ewItemById(id))); }
-  // the ticked rows through otherUpdateMany (no confirmation: ticking was it); rows stream as in a bulk run
+  // the ticked rows through otherUpdateMany (no confirmation: ticking was it); rows stream as in a bulk run.
+  // Home Assistant core goes last (the bridge orders it the same way): it restarts Home Assistant.
+  function ewCoreLast(ids) { return ids.filter(id => !ewCore(ewItemById(id))).concat(ids.filter(id => ewCore(ewItemById(id)))); }
   function ewStartTicked(ids) {
+    ids = ewCoreLast(ids);
     ids.forEach(id => { delete state.ewRuns[id]; });
     state.ewBatch = { group: null, ticked: true, ids: ids.slice(), done: [], stopping: false };
     state.ewTickedRun = ids.slice();
@@ -881,7 +887,7 @@
   }
   // Update now's system run reached its verdict: a good one starts the ticked rows, a failed one keeps them
   function ewThenAfter(a) {
-    const ids = a.then.filter(id => ewTickable(ewItemById(id)));
+    const ids = ewCoreLast(a.then.filter(id => ewTickable(ewItemById(id))));
     a.thenRows = {};
     a.then.forEach(id => { const it = ewItemById(id); if (it) a.thenRows[id] = it; });
     if (a.failed) { a.thenState = 'held'; return; }
@@ -925,6 +931,11 @@
     if (it.status === 'failed') return `<span class="badge critical">CHECK FAILED</span>`;
     if (it.status === 'cant_check') return `<span class="badge grey">CAN’T CHECK</span>`;
     if (it.status === 'updated') return `<span class="badge patch">${it.pulled ? 'PULLED' : 'UPDATED'}</span>`;
+    const cc = ewCore(it) && it.core_check;
+    if (cc) {        // HA core (2026-11-10): the step in code (PATCH / MONTHLY), the colour from the check
+      const cls = { green: 'patch', yellow: 'minor', red: 'major' }[cc.risk] || 'minor';
+      return `<span class="badge ${cls}" title="${esc(cc.step === 'patch' ? 'A patch release in the same month' : 'A monthly release: it can carry breaking changes')}">${cc.step === 'patch' ? 'PATCH' : 'MONTHLY'}</span>`;
+    }
     const [cls, text] = EW_BADGE[it.severity] || EW_BADGE.unknown;
     return `<span class="badge ${cls}">${cls === 'grey' && ewDigest(it) ? 'NEW BUILD' : text}</span>`;
   }
@@ -935,15 +946,22 @@
     if (it.restart_pending && !state.ewRuns[it.id]) return ['warn', 'Downloaded; Home Assistant needs a restart to load it.'];
     if (ewFixable(it) && !state.ewRuns[it.id]) return ['bad', (it.last_run.note || 'The last update failed.').replace(/^(Not fixed: )?/, it.last_run.result === 'fix_failed' ? 'Not fixed: ' : '')];
     if (it.status === 'updated' || it.status === 'rebuilt') return null;
+    // HA core (2026-11-10): the release-notes verdict, red when it touches something in use
+    if (ewCore(it) && it.core_check && it.action === 'ha_install') {
+      const cc = it.core_check;
+      return [cc.risk === 'red' ? 'bad' : cc.status === 'checked' || cc.status === 'no_breaking' ? '' : 'warn', cc.line, !!cc.ai];
+    }
     if (it.source === 'ha' && /^(core|os|supervisor)$/.test(it.kind || '')) return ['', 'Open only: installing it restarts Home Assistant, so you do it there.'];
     if (it.pulled) return ['', it.hint || 'Pulled. Restart it to use the new image.'];
     if (it.warning && state.ewConfirm !== it.id) return ['warn', it.warning];
     if (ewUnused(it)) return ['', 'Nothing uses it; consider removing.'];
     return null;
   }
-  const aiTag = (it, field) => (it.ai || []).includes(field) ? ` <span class="ai-tag" title="Written by Claude (claude -p), not from a registry or this box">AI</span>` : '';
+  const AI_TITLE = 'Written by Claude (claude -p), not from a registry or this box';
+  const aiTag = (it, field) => (it.ai || []).includes(field) ? ` <span class="ai-tag" title="${AI_TITLE}">AI</span>` : '';
   // the exact thing a button will do, as the confirm panel and the details show it
   function ewDoes(it) {
+    if (it.action === 'ha_install' && ewCore(it)) return `Home Assistant: check_config, then update.install ${it.entity_id || ''} ${it.latest || ''}${it.backup ? ' (backup first)' : ' (no backup: this Home Assistant cannot take one with the update)'}, then wait while it restarts (up to 30 min)`;
     if (it.action === 'ha_install') return `Home Assistant: update.install ${it.entity_id || ''} ${it.latest || ''}${it.backup ? ' (backup first)' : ''}${ewIntegration(it) ? ', then one Home Assistant restart to load it' : ''}`;
     return it.command ? '$ ' + it.command : '';
   }
@@ -1026,7 +1044,25 @@
       <div class="btns"><button class="btn small" data-action="ew-cancel">Cancel</button><button class="btn small primary" data-action="ew-restart-go" data-id="${esc(it.id)}">Restart</button></div>
     </div>`;
   }
+  // HA core (2026-11-10): what the release check found, what happens, and the exact calls. Also the
+  // confirmation for ticking it for Update now (`tick`: the button ticks instead of installing).
+  function renderEwCoreConfirm(it, tick) {
+    const cc = it.core_check || {};
+    const touches = (cc.touches || []).slice(0, 4);
+    const verdict = cc.line ? `<p class="${cc.risk === 'red' ? 'bad' : cc.status === 'checked' || cc.status === 'no_breaking' ? '' : 'warn'}">${cc.ai ? `<span class="ai-tag lead" title="${AI_TITLE}">AI</span>` : ''}${esc(cc.line)}</p>` : '';
+    return `<div class="ew-confirm ew-core-confirm" data-id="${esc(it.id)}">
+      <p><b>Install Home Assistant ${esc(it.latest || '')}?</b> ${cc.step === 'patch' ? 'A patch release.' : 'A monthly release (' + esc(it.installed || '') + ' → ' + esc(it.latest || '') + ').'}
+        Home Assistant restarts: automations pause for a few minutes. Rivet checks the configuration first and stops if it is broken${it.backup ? ', and Home Assistant takes a backup before it installs' : '; this Home Assistant cannot take a backup with the update, so there is none'}.</p>
+      ${verdict}
+      ${touches.length ? `<ul class="ew-core-touches">${touches.map(t => `<li><b>${esc(t.integration)}</b>: ${esc(t.what_changes)}. <span class="todo">${esc(t.what_to_do)}</span></li>`).join('')}</ul>` : ''}
+      <div class="cmd mono">${esc(ewDoes(it))}</div>
+      <div class="btns">${cc.notes_url || it.link ? `<button class="btn small ew-open" data-action="open-url" data-url="${esc(cc.notes_url || it.link)}">Release notes ↗</button>` : ''}<button class="btn small" data-action="ew-cancel">Cancel</button>${tick
+        ? `<button class="btn small primary" data-action="ew-tick-go" data-id="${esc(it.id)}">Tick for Update now</button>`
+        : `<button class="btn small ${cc.risk === 'red' ? 'danger' : 'primary'}" data-action="ew-go" data-id="${esc(it.id)}">Install and restart</button>`}</div>
+    </div>`;
+  }
   function renderEwConfirm(it) {
+    if (ewCore(it)) return renderEwCoreConfirm(it, state.ewConfirmTick === it.id);
     const ha = it.action === 'ha_install';
     return `<div class="ew-confirm" data-id="${esc(it.id)}">
       <p><b>Major update, ${esc(it.installed || '')} → ${esc(it.latest || '')}.</b> ${ha ? 'Home Assistant installs it on the HA VM; a major version can change how it behaves.' : 'A major version can change how it behaves.'}</p>
@@ -1050,7 +1086,7 @@
     let html = `<div class="row ew-row ${open ? 'open' : ''}" data-action="ew-expand" data-id="${esc(it.id)}" data-status="${esc(it.status)}" data-severity="${esc(it.severity)}" data-act="${esc(it.action || '')}" data-safe="${ewSafe(it) ? 1 : 0}" role="button" aria-expanded="${open}">
       ${cb}${grp === 'pc' ? `<span class="src mono">${esc(EW_SRC[it.source] || it.source)}</span>` : ''}
       <div class="body"><div class="hd"><span class="name" title="${esc(it.name)}">${esc(ewName(it))}</span><span class="ver">${ewVersion(it)}</span></div>
-        ${hint ? `<div class="ew-hint ${hint[0]}" title="${esc(hint[1])}">${hint[0] === 'warn' ? '<span class="ic" aria-hidden="true">⚠</span>' : ''}${esc(hint[1])}</div>` : ''}</div>
+        ${hint ? `<div class="ew-hint ${hint[0]}" title="${esc(hint[1])}">${hint[0] === 'warn' ? '<span class="ic" aria-hidden="true">⚠</span>' : ''}${hint[2] ? `<span class="ai-tag lead" title="${AI_TITLE}">AI</span>` : ''}${esc(hint[1])}</div>` : ''}</div>
       ${ewBadge(it)}${ewSecondary(it)}<span class="ew-btn">${ewButton(it)}</span>${svgChev}</div>`;
     if (state.ewConfirm === it.id) html += renderEwConfirm(it);
     if (state.ewRestartAsk === it.id) html += renderEwRestartConfirm(it);
@@ -1058,6 +1094,23 @@
     else if (queued) html += `<div class="ew-run queued" data-id="${esc(it.id)}"><div class="st">Waiting its turn (${state.ewBatch.ids.indexOf(it.id) + 1} of ${state.ewBatch.ids.length})</div></div>`;
     if (open) html += renderEwDetails(it);
     return html;
+  }
+  // the release check of a pending HA core update, in the details (2026-11-10)
+  function ewCoreDetails(it, cc) {
+    const tag = cc.ai ? `<span class="ai-tag lead" title="${AI_TITLE}">AI</span>` : '';
+    let h = `<div class="ew-core"><p class="ew-core-line ${cc.risk === 'red' ? 'bad' : ''}">${tag}${esc(cc.line || '')}</p>`;
+    const touches = cc.touches || [];
+    if (touches.length) h += `<ul class="ew-core-touches">${touches.map(t => `<li><b>${esc(t.integration)}</b> <span class="small">(${esc(t.release)}${t.by === 'notes' ? ', named in the notes' : ''})</span>: ${esc(t.what_changes)}. <span class="todo">${esc(t.what_to_do)}</span></li>`).join('')}</ul>`;
+    const facts = [];
+    if (cc.breaking != null) facts.push(`${cc.breaking} breaking change${cc.breaking === 1 ? '' : 's'} in the notes${touches.length && cc.breaking ? `, ${Math.max(0, cc.untouched != null ? cc.untouched : cc.breaking - touches.length)} touch nothing you use` : ''}`);
+    if (cc.in_use != null) facts.push(`checked against ${cc.in_use} integrations this Home Assistant uses`);
+    if (cc.partial) facts.push(`a long skip: Rivet read the newest ${(cc.releases || []).filter(r => !/\.\d+\.\d+$/.test(r.version)).length} of ${cc.months_total || '?'} monthly releases`);
+    if (cc.reason) facts.push(cc.reason);
+    if (facts.length) h += `<p class="small">${esc(facts.join('; '))}.</p>`;
+    const rels = (cc.releases || []).filter(r => r.url);
+    if (rels.length) h += `<p class="small ew-core-rels">Read: ${rels.map(r => `<a href="#" data-action="open-url" data-url="${esc(r.url)}">${esc(r.version)}</a> (${r.breaking} breaking)`).join(' · ')}</p>`;
+    h += `<p class="small">${cc.step === 'patch' ? 'A patch release in the same month' : 'A monthly release'}: Rivet rates it ${cc.step === 'patch' ? 'green at best' : 'yellow at least'}; a breaking change in an integration you use makes it red. ${cc.status === 'checked' ? 'Claude may only raise the colour, never lower it.' : ''}</p></div>`;
+    return h;
   }
   function renderEwDetails(it) {
     const src = ((elsewhere() || {}).sources || []).find(s => s.id === it.source) || {};
@@ -1073,6 +1126,7 @@
     if ((it.status === 'failed' || it.status === 'cant_check' || it.pulled) && it.hint) about += `<p>${esc(it.hint)}</p>`;
     if (it.status === 'rebuilt') about += `<p class="small ew-rebuilt">${esc(it.hint || 'Image rebuilt upstream (same version).')}</p>`;
     if (it.source === 'podman' && it.newest_tag && it.newest_tag !== it.latest && it.status === 'ok') about += `<p class="small">Newest tag in the repo: ${esc(it.newest_tag)}.</p>`;
+    if (ewCore(it) && it.core_check && it.status === 'ok') about += ewCoreDetails(it, it.core_check);
     if (!about) about = `<p>${esc(it.hint || 'Nothing more is known about it.')}</p>`;
     if ((it.ai || []).length) about += '<p class="small">Lines tagged AI were written by Claude (claude -p) and cached; nothing else on this box knew.</p>';
     const facts = [`${esc(src.title || it.source)}: ${esc(src.status || '?')}${src.checked != null ? `, ${src.checked} checked` : ''}`,
@@ -1080,6 +1134,7 @@
     const todo = it.status === 'rebuilt' ? 'Nothing to do: the version did not change.'
       : it.source === 'podman' && it.stateful ? (it.runbook ? `It holds data, so Rivet never updates it. Upgrade it by hand following the runbook (${it.runbook_title || 'see the link'}).` : 'It holds data, so Rivet never updates it. Upgrade it by hand (back up its data first).')
       : it.action === 'update' ? 'Update runs this as you (no root, no prompt) and shows the output here:'
+      : it.action === 'ha_install' && ewCore(it) ? 'Install in HA asks first, checks the configuration, asks Home Assistant to install it (update.install), then waits while Home Assistant restarts and checks it came back on the new version:'
       : it.action === 'ha_install' ? 'Install in HA asks Home Assistant to install it (update.install), then waits until it is done:'
       : it.source === 'ha' && /^(core|os|supervisor)$/.test(it.kind || '') ? 'This restarts or reboots the Home Assistant VM, so it stays a manual step: do it in Home Assistant.'
       : (it.status === 'failed' ? (src.error || it.hint || 'The check failed; the next check tries again.')
@@ -1240,9 +1295,10 @@
     state.ewRuns[it.id] = { id: it.id, kind: 'remove', phase: 'running', lines: [], msg: `Checking that nothing in Home Assistant uses ${it.name}…`, pct: null, link: ewRemoveLink(it) };
     send({ cmd: 'otherRemove', id: it.id });
   }
-  function ewStart(it) {
+  // `confirmed`: the in-row confirmation was answered (HA core installs only with it, 2026-11-10)
+  function ewStart(it, confirmed) {
     state.ewRuns[it.id] = { id: it.id, phase: 'running', lines: [], msg: it.action === 'ha_install' ? 'Asking Home Assistant…' : 'Starting…', pct: null };
-    send({ cmd: 'otherUpdate', id: it.id });
+    send(confirmed ? { cmd: 'otherUpdate', id: it.id, confirmed: true } : { cmd: 'otherUpdate', id: it.id });
   }
 
   /* ---- Held back (pinned with `flatpak mask`) ---- */
@@ -2047,7 +2103,15 @@
     'ew-tick': (t) => {
       const it = ewItemById(t.dataset.id);
       if (!it || !ewTickable(it)) return;
-      if (state.ewTicked.has(it.id)) state.ewTicked.delete(it.id); else state.ewTicked.add(it.id);
+      if (state.ewTicked.has(it.id)) { state.ewTicked.delete(it.id); return; }
+      // HA core (2026-11-10): ticking it is a decision to restart Home Assistant, so it asks first
+      if (ewCore(it)) { state.ewConfirm = it.id; state.ewConfirmTick = it.id; state.ewRestartAsk = null; return; }
+      state.ewTicked.add(it.id);
+    },
+    'ew-tick-go': (t) => {
+      const it = ewItemById(t.dataset.id);
+      state.ewConfirm = null; state.ewConfirmTick = null;
+      if (it && ewTickable(it)) state.ewTicked.add(it.id);
     },
     'toggle-drawer': () => { if (state.apply) state.apply.drawer = !state.apply.drawer; },
     'toggle-details': () => { if (state.apply) state.apply.details = !state.apply.details; },
@@ -2104,10 +2168,10 @@
     'ew-update': (t) => {
       const it = ewItems().find(i => i.id === t.dataset.id);
       if (!it || ewBusy()) return;
-      if (it.confirm) { state.ewConfirm = it.id; return; }
+      if (it.confirm || ewCore(it)) { state.ewConfirm = it.id; state.ewConfirmTick = null; return; }
       ewStart(it);
     },
-    'ew-go': (t) => { const it = ewItems().find(i => i.id === t.dataset.id); state.ewConfirm = null; if (it && !ewBusy()) ewStart(it); },
+    'ew-go': (t) => { const it = ewItems().find(i => i.id === t.dataset.id); state.ewConfirm = null; state.ewConfirmTick = null; if (it && !ewBusy()) ewStart(it, true); },
     // "Update the safe ones (N)": confirm (the exact list) -> otherUpdateMany -> rows stream one by one
     'ew-bulk': (t) => {
       if (ewBusy()) return;
@@ -2128,7 +2192,7 @@
       send({ cmd: 'otherUpdateMany', ids });
     },
     'ew-bulk-stop': () => { if (state.ewBatch && !state.ewBatch.stopping) { state.ewBatch.stopping = true; send({ cmd: 'otherStop' }); } },
-    'ew-cancel': () => { state.ewConfirm = null; state.ewRestartAsk = null; },
+    'ew-cancel': () => { state.ewConfirm = null; state.ewConfirmTick = null; state.ewRestartAsk = null; },
     'ew-bulk-toggle': (t) => {
       const a = state.ewBulkAsk;
       if (!a) return;
@@ -2465,6 +2529,16 @@
     const it = ewItems().find(i => i.id === id) || { name: id };
     const ev = (o) => receive({ type: 'other', event: Object.assign({ other_id: id, pct: null, log: null, msg: null }, o) });
     let t = 0; const at = (ms, o) => { t += ms; later(t, () => ev(o)); };
+    if (ewCore(it)) {         // HA core (2026-11-10): config check, backup, the expected restart
+      at(150, { step: 'other', status: 'start', pct: 0, msg: 'Checking Home Assistant’s configuration first… (mock)', log: 'POST /api/config/core/check_config' });
+      at(500, { step: 'other', status: 'progress', pct: 12, msg: `Asking Home Assistant to install ${it.latest}… (mock)`, log: `POST /api/services/update/install {"entity_id": "${it.entity_id || ''}", "backup": true}` });
+      at(600, { step: 'other', status: 'progress', pct: 40, msg: 'Home Assistant is restarting, this is expected. Rivet waits for it (up to 30 min)… (mock)' });
+      at(1500, { step: 'other', status: 'progress', pct: 70, msg: 'Home Assistant answers again and is starting (starting)… (mock)' });
+      at(600, { step: 'done', status: 'ok', summary: `Home Assistant is now ${it.latest} and running. (mock: nothing ran)`,
+        other: { id, result: 'installed', item: Object.assign({}, it, { status: 'updated', installed: it.latest, action: null, confirm: false }) } });
+      if (then) later(t + 300, then);
+      return;
+    }
     at(150, { step: 'other', status: 'start', pct: 0, msg: `Updating ${it.name}…`, log: it.command ? '$ ' + it.command : `POST /api/services/update/install {"entity_id": "${it.entity_id || ''}"}` });
     at(500, { step: 'other', status: 'progress', msg: 'changed 1 package in 2s (mock)', log: 'changed 1 package in 2s (mock)' });
     at(400, { step: 'done', status: 'ok', summary: `${it.name} is now ${it.latest || '?'}. (mock: nothing ran)`,

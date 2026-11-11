@@ -419,7 +419,7 @@
     "checked_at": "2026-09-15T09:41:20-04:00",
     "duration_ms": 1830,
     "counts": {
-      "stale": 16,
+      "stale": 17,
       "failed": 1,
       "cant_check": 1
     },
@@ -473,7 +473,7 @@
         "title": "Home Assistant",
         "status": "ok",
         "checked": 20,
-        "stale": 6,
+        "stale": 7,
         "error": null,
         "hint": null,
         "checked_at": "2026-09-15T09:41:20-04:00",
@@ -584,6 +584,85 @@
         "where": null,
         "action": "update",
         "confirm": false
+      },
+      {
+        "id": "ha:update.home_assistant_core_update",
+        "source": "ha",
+        "name": "Home Assistant Core",
+        "installed": "2026.10.4",
+        "latest": "2026.11.1",
+        "severity": "minor",
+        "checked_at": "2026-09-15T09:41:20-04:00",
+        "status": "ok",
+        "link": "https://www.home-assistant.io/latest-release-notes/",
+        "hint": "Update in Home Assistant: Settings \u203a System \u203a Updates",
+        "command": null,
+        "what": "Home Assistant itself.",
+        "used_by": "Home Assistant on the HA VM. Installing restarts Home Assistant.",
+        "ai": [
+          "core_check"
+        ],
+        "warning": null,
+        "where": null,
+        "action": "ha_install",
+        "confirm": true,
+        "kind": "core",
+        "installable": true,
+        "backup": true,
+        "entity_id": "update.home_assistant_core_update",
+        "ha_link": "http://homeassistant.local:8123/config/updates",
+        "core_check": {
+          "from": "2026.10.4",
+          "to": "2026.11.1",
+          "step": "monthly",
+          "risk": "red",
+          "status": "checked",
+          "line": "Touches MQTT and Automation, which you use: the discovery_prefix option in YAML is removed; check your config first.",
+          "ai": true,
+          "reason": null,
+          "touches": [
+            {
+              "release": "2026.11",
+              "title": "MQTT",
+              "integration": "MQTT",
+              "domain": "mqtt",
+              "what_changes": "The discovery_prefix option in YAML is removed",
+              "what_to_do": "Move the setting before you update.",
+              "by": "model"
+            },
+            {
+              "release": "2026.11",
+              "title": "Targeting labels in automations and scripts",
+              "integration": "Automation",
+              "domain": "automation",
+              "what_changes": "labelled config entities now follow label-targeted actions",
+              "what_to_do": "Check which entities carry your labels.",
+              "by": "model"
+            }
+          ],
+          "breaking": 4,
+          "untouched": 2,
+          "releases": [
+            {
+              "version": "2026.11",
+              "url": "https://www.home-assistant.io/blog/2026/11/04/release-202611/",
+              "breaking": 4
+            },
+            {
+              "version": "2026.11.1",
+              "url": "https://github.com/home-assistant/core/releases/tag/2026.11.1",
+              "breaking": 0
+            }
+          ],
+          "notes_url": "https://www.home-assistant.io/blog/2026/11/04/release-202611/",
+          "in_use": 15,
+          "checked_at": "2026-09-15T09:43:02-04:00",
+          "model": "sonnet",
+          "partial": false,
+          "summary": "Two of the four breaking changes touch this Home Assistant: the MQTT YAML option and label targeting.",
+          "verdict": "touches"
+        },
+        "risk": "red"
       },
       {
         "id": "ha:update.alexa_media_player_update",
