@@ -836,6 +836,57 @@ def run():
     bt = [e for e in oevs() if e.get("step") == "batch" and e["batch"]["ran"]]
     check(calls == ["--other-update npm:slow1"] and bt and bt[0]["batch"]["stopped"],
           "stop: the running row finished, the other two never started (%s)" % calls)
+
+    # ------------------------------------- rows ticked for Update now (2026-11-10)
+    print("\nother software: otherUpdateMany ticked:true runs every row-updatable id, waits for the system run's tail:")
+    U.write_json_atomic(U.STATE_FILE, {"schema": 1, "status": "ok", "groups": [], "summary": {"total": 0}, "elsewhere": {"items": rows}})
+    open(os.path.join(TMP, "other-calls.log"), "w").close()
+    os.environ["RIVET_COLLECT_CMD"] = "true"
+    out = []
+    b = U.Bridge(out.append)
+    b.applying = True               # the system run's rivet-apply sent done but has not exited yet
+    tick = ["npm:big", "npm:minor", "npm:warned", "ha:update.addbig", "ha:update.fw", "ha:update.core", "podman:pulled", "npm:gone"]
+    b.handle(json.dumps({"cmd": "otherUpdateMany", "ids": tick, "ticked": True}))
+    check(not oevs() and b._batch is None, "while the system run is still exiting, nothing is refused or started yet")
+    GLib.timeout_add(500, lambda: setattr(b, "applying", False) or False)
+    wait_for(lambda: b._batch is not None, 4000)
+    b.handle(json.dumps({"cmd": "refresh"}))       # the post-apply re-check lands while the rows run
+    check(b._batch is not None and b._batch["refresh"] and b._collect_proc is None
+          and not any(m.get("type") == "state" for m in out), "a check asked for meanwhile is deferred (no stub, no collector)")
+    wait_for(lambda: any(e.get("step") == "batch" for e in oevs()) and not b.applying, 8000)
+    calls = [c for c in open(os.path.join(TMP, "other-calls.log")).read().split("\n") if c]
+    check(calls == ["--other-update npm:big", "--other-update npm:minor", "--other-update npm:warned", "--other-update ha:update.addbig"],
+          "a major, a minor, a warned row and an HA major add-on all run, in the ticked order (%s)" % calls)
+    refused = sorted(e["other_id"] for e in oevs() if e.get("step") == "done" and e["other"]["result"] == "refused")
+    check(refused == sorted(["ha:update.fw", "ha:update.core", "podman:pulled", "npm:gone"]),
+          "firmware / HA core / a pulled image / a missing row are refused, never run (%s)" % refused)
+    d = [e for e in oevs() if e.get("other_id") == "ha:update.core" and e.get("step") == "done"]
+    check(d and d[0]["summary"].startswith("Not run: Core cannot be updated from Rivet now"), "the refusal says so in one line")
+    wait_for(lambda: any(m.get("type") == "state" and m["state"].get("status") == "checking" for m in out), 3000)
+    bt_i = next(i for i, m in enumerate(out) if m.get("type") == "other" and m["event"].get("step") == "batch")
+    st_i = next((i for i, m in enumerate(out) if m.get("type") == "state" and m["state"].get("status") == "checking"), -1)
+    check(st_i > bt_i, "the deferred check starts after the batch event (%d > %d)" % (st_i, bt_i))
+    wait_for(lambda: b._collect_proc is None, 4000)
+    out.clear()
+    b.handle(json.dumps({"cmd": "otherUpdateMany", "ids": ["npm:a"]}))
+    b.handle(json.dumps({"cmd": "refresh"}))       # a plain "Update the safe ones" never defers a check
+    check(b._collect_proc is not None, "a check during a safe-ones run is not deferred (unchanged)")
+    wait_for(lambda: any(e.get("step") == "batch" for e in oevs()) and not b.applying and b._collect_proc is None, 6000)
+    out.clear()
+    b.applying = True               # something else holds the bridge for good: refused after the wait
+    b.TICK_WAIT_MS = 600
+    b.handle(json.dumps({"cmd": "otherUpdateMany", "ids": ["npm:minor"], "ticked": True}))
+    wait_for(lambda: any(e.get("step") == "batch" for e in oevs()), 4000)
+    check([e["other"]["result"] for e in oevs() if e.get("step") == "done"] == ["refused"] and b._batch is None,
+          "a bridge still busy after the wait refuses the ticked rows (one refused done each, a batch event)")
+    b.applying = False
+    out.clear()
+    b._batch = {"queue": []}
+    b.handle(json.dumps({"cmd": "restart"}))
+    check(any(m.get("type") == "error" and m["msg"].startswith("Not yet: Other software is still updating") for m in out),
+          "Restart now is refused while Other-software rows run")
+    b._batch = None
+    del os.environ["RIVET_COLLECT_CMD"]
     print("\nother software: a single integration install is followed by one HA restart; otherFix:")
     fake_claude = os.path.join(TMP, "claude")            # Fix it needs a claude to exist (never run here)
     with open(fake_claude, "w") as fh:

@@ -486,6 +486,12 @@ class Bridge:
 
     def cmd_refresh(self, _msg):
         self.doctor_active = False        # the UI is on the loading screen now
+        if self._batch is not None and self._batch.get("ticked"):
+            # 2026-11-10: rows ticked for Update now are running; a collector now would race their
+            # state.json patches (and npm outdated vs npm install). It runs when the batch ends.
+            log("refresh: deferred until the ticked Other-software rows finish")
+            self._batch["refresh"] = True
+            return
         if self._collect_proc is not None:
             # the escape-hatch button on a slow check: one collector at a time
             log("refresh: a collector is already running, not starting another")
@@ -1376,6 +1382,11 @@ class Bridge:
                 "Refusing to reboot: the NVIDIA kernel module was not verified for the new kernel."
             )
             return
+        if self._batch is not None or self._other is not None:
+            # 2026-11-10: ticked Other-software rows run after Update now; the UI disables Restart
+            # now until they finish, and a restart that slips through is refused here too
+            self.push_error("Not yet: Other software is still updating. Restart when it finishes.")
+            return
         if msg.get("release") is not None:
             # 2026-11-03: restart INTO the downloaded release upgrade. Not logind: dnf5's own
             # `system-upgrade reboot` (rivet-apply --release-reboot, as root through polkit),
@@ -1578,13 +1589,29 @@ class Bridge:
                              and (it.get("severity") == "patch" or it.get("source") == "podman"
                                   or (it.get("source") == "ha" and it.get("kind") in ("addon", "integration"))))
 
-    def cmd_otherUpdateMany(self, msg):
+    # Rows ticked for "Update now" (2026-11-10, `ticked: true`): the same queue, but an id only has
+    # to be updatable from its own row (the per-row Update / Install in HA), not safe: ticking it
+    # was the confirmation. HA core / OS / supervisor / firmware and Open / Copy rows still never run.
+    @staticmethod
+    def other_tickable(it):
+        return bool(it) and (it.get("status") == "ok" and it.get("action") in ("update", "ha_install")
+                             and it.get("kind") not in ("core", "os", "supervisor", "firmware"))
+
+    TICK_WAIT_MS = 30000
+
+    def cmd_otherUpdateMany(self, msg, waited=0):
         ids = []
         for rid in (msg.get("ids") or [])[:50]:
             rid = str(rid or "")
             if rid and len(rid) <= 300 and rid not in ids:
                 ids.append(rid)
         if not ids:
+            return
+        ticked = msg.get("ticked") is True
+        if ticked and self.busy and self._batch is None and self._other is None and waited < self.TICK_WAIT_MS:
+            # the UI sends the ticked rows on the system run's done event, while that rivet-apply
+            # may still be exiting: wait for it (bounded) instead of refusing
+            GLib.timeout_add(200, lambda: (self.cmd_otherUpdateMany(msg, waited + 200), False)[1])
             return
         if self.busy or self._batch is not None:
             log("otherUpdateMany refused: busy")
@@ -1595,15 +1622,17 @@ class Bridge:
         doc = self.load_state() or {}
         rows = {i.get("id"): i for i in ((doc.get("elsewhere") or {}).get("items") or []) if isinstance(i, dict)}
         b = {"ids": ids, "queue": [], "ran": [], "refused": [], "skipped": [], "stop": False, "restart": False,
-             "restarted": False, "ha_down": None}
+             "restarted": False, "ha_down": None, "ticked": ticked, "refresh": False}
         for rid in ids:
-            if self.other_safe(rows.get(rid)):
+            if (self.other_tickable if ticked else self.other_safe)(rows.get(rid)):
                 b["queue"].append(rid)
             else:
                 b["refused"].append(rid)
-                self._other_push_done(rid, "Not part of a bulk update: %s needs its own click (or is gone)."
-                                      % ((rows.get(rid) or {}).get("name") or rid), result="refused", clear=False)
-        log("other update many: %d to run, %d refused" % (len(b["queue"]), len(b["refused"])))
+                name = (rows.get(rid) or {}).get("name") or rid
+                self._other_push_done(rid, ("Not run: %s cannot be updated from Rivet now (or is gone)." if ticked else
+                                            "Not part of a bulk update: %s needs its own click (or is gone).") % name,
+                                      result="refused", clear=False)
+        log("other update many%s: %d to run, %d refused" % (" (ticked)" if ticked else "", len(b["queue"]), len(b["refused"])))
         self._batch = b
         self._batch_next()
 
@@ -1630,6 +1659,9 @@ class Bridge:
             self._batch = None
             self._push_batch({"ids": b["ids"], "ran": b["ran"], "refused": b["refused"], "skipped": b["skipped"],
                               "stopped": bool(b["stop"] and b["queue"])})
+            if b.get("refresh"):
+                # a check asked for while the ticked rows ran (the one after Update now) runs now
+                GLib.idle_add(lambda: (self.cmd_refresh({}), False)[1])
             return False
         rid = b["queue"].pop(0)
         if b.get("ha_down") and rid.startswith("ha:"):

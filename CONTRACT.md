@@ -531,7 +531,8 @@ warning, Cancel / "Update anyway"), **Open in HA ↗** / **Open ↗** (`openUrl`
 (`copyText`, toast "Copied …"). While a run streams, the row shows `.ew-run` (status line + the
 last output lines); other rows' Update buttons are disabled; afterwards the row shows the
 result (green "Updated to …", podman: what to restart; red on failure with the log) until the
-next state push without a run. No checkbox, never selectable, never in `apply`. The header
+next state push without a run. No checkbox, never selectable, never in `apply` (2026-11-10: see
+"Ticked for Update now"; still never in `apply`). The header
 subline gains "· N more in Other software ↓" (a button that scrolls to the section; not a
 summary chip, the summary row is full at 1280 px). Rows expand for the hint, the command, the
 link and the per-source status.
@@ -752,6 +753,48 @@ never shows a digest. Per running image (`podman ps -a`, not `localhost/`):
   `pull_gets_it`; a pinned tag (or a newer version outside the floating tag's track) gets
   `action: "open"` (the release notes / tags page) and the hint "Pinned to <tag>: change the tag
   where <containers> is defined to upgrade."
+
+**Ticked for Update now** (2026-11-10; supersedes "No checkbox, never selectable, never in
+`apply`" under "UI" above). The owner wanted a deliberately ticked Other-software row to ride along
+with **Update now**.
+- **Which rows.** Every row whose own button is **Update** / **Install in HA** has a checkbox
+  (`.ew-row .cb[data-action="ew-tick"][data-id]`, the System rows' style and column): `status: "ok"`,
+  `action` `update` / `ha_install`, `kind` not core/os/supervisor/firmware (UI `ewTickable`, bridge
+  `Bridge.other_tickable`, the same rule). Open, Copy, runbook, Fix it, Remove and rebuilt rows have
+  none; a card that has tickable rows gives the others an empty slot so the names line up.
+- **Ticking.** Unticked by default, always. Only a click on the row's checkbox ticks it: Select all
+  (global and per group), Safe only and Security only touch `selected` (system ids) only, so a major
+  version is never swept in. The ticks live in the page (`state.ewTicked`), survive state pushes while
+  the row exists and is still tickable, and are dropped otherwise. A row that ran (done, failed or not)
+  is unticked; one that was refused, skipped or stopped before it started stays ticked.
+- **The button.** "Update now N" counts ticked system items + ticked Other rows and is enabled when
+  either is non-zero; "X selected" in the summary stays system-only. On the "nothing pending" screen
+  the header shows Update now next to Check now when any row is tickable.
+- **Order.** System items first, through `apply` exactly as before. When that run's `done` is not
+  `fail` (ok or warn; kmod not verified included: the module only blocks the restart), the page sends
+  `otherUpdateMany {ids, ticked: true}` with the ticked rows still tickable, in the order they were
+  ticked, with no confirmation (ticking was it, majors included). A `fail` done (failed, cancelled,
+  synthetic) runs none of them: they stay ticked and the result screen says "The N ticked Other
+  software updates did not run because the system update failed. They are still ticked." A refused
+  `apply` (busy) goes back to the list with that in its toast. Only Other rows ticked: no `apply`, the
+  batch starts at once and the rows stream in place in the list (the group of the row that runs shows
+  "Updating i of N" with **Stop after this one**; a toast sums it up at the end).
+- **Result screen** (`.ew-then` under the reboot line): the ticked rows as Other-software rows (source
+  tag, version, badge, button; no checkbox), each streaming into its own `.ew-run` exactly as in a bulk
+  run, under "Other software N" with "Updating i of N" / Stop after this one, then each row's outcome
+  (green / red with the log and Fix it) and a sum ("2 done · 1 failed"). Until the batch event, every
+  button of the result screen (Restart now, Later, Done, Fix it) is disabled with "Wait: Other software
+  is still updating", plus one line "The buttons below wait until these finish."; Check now / `r` are
+  refused. The outcome stays on the screen after the post-run check drops the rows.
+- **Bridge.** `otherUpdateMany` with `ticked: true` runs `otherUpdate`'s path per id like "Update the
+  safe ones" (same events, Stop, the one HA restart at the end for an integration), but checks each id
+  with `other_tickable` instead of the safe set (refused: "Not run: <name> cannot be updated from
+  Rivet now (or is gone)."). Sent on the system run's `done`, it may find the bridge still busy with
+  that rivet-apply's exit: it waits (every 200 ms, up to 30 s) instead of refusing; still busy after
+  that = refused as before. While a ticked batch runs, `refresh` (the check the bridge starts 600 ms
+  after an apply, or Check now) is deferred and runs when the batch ends (a collector meanwhile would
+  race the rows' state.json patches). `restart` is refused while any Other-software run or batch is
+  going ("Not yet: Other software is still updating."). A plain "Update the safe ones" is unchanged.
 
 **Shell extension.** Unchanged and must stay so: it reads `groups`/`summary`, and `elsewhere` is
 neither, so Other software can never inflate the top-bar badge. (There is no flag for counting it; one
@@ -1051,7 +1094,9 @@ first and must be in the "Safe set" (see Other software, "Front page"); one that
 is missing, gets a synthetic `done` with `result: "refused"` and is skipped. Refused as a
 whole (a `refused` done per id) while anything else runs. A failed row does not stop the
 rest. When the queue is empty: `{"type":"other","event":{"step":"batch","status":"done",
-"batch":{"ids":[...],"ran":[...],"refused":[...],"stopped":bool}}}`), `otherStop {}` (drops the
+"batch":{"ids":[...],"ran":[...],"refused":[...],"stopped":bool}}}`; 2026-11-10: `ticked: true` = the
+rows ticked for Update now: the row-updatable rule instead of the safe set, a bounded wait for a busy
+bridge, `refresh` deferred until it ends; see Other software, "Ticked for Update now"), `otherStop {}` (drops the
 rest of the queue; the row that is running finishes), `otherRemove {id}` (2026-11-01: one
 `rivet-apply --other-remove ID` through `otherUpdate`'s exact plumbing and events; also refused
 during a bulk run; `--demo` plays a canned removal; see Other software, "Remove an unused add-on"),

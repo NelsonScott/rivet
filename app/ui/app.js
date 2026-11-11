@@ -58,6 +58,8 @@
     ewBatch: null,              // {group, ids, done, stopping}: a bulk run in progress (otherUpdateMany)
     ewHaRestart: null,          // {phase, msg}: rivet-apply --ha-restart running (after an integration install)
     ewRestartAsk: null,         // the row id whose "Restart Home Assistant?" confirm is open
+    ewTicked: new Set(),        // Other-software row ids ticked for Update now (2026-11-10): only a direct click ticks one
+    ewTickedRun: null,          // the ids of a ticked run (otherUpdateMany ticked) until its batch event
     query: '',
     menuOpen: false,
     modal: null,                // 'settings' | null
@@ -120,9 +122,10 @@
     // refusal (the bridge is busy: "Not now: another operation is still running"), there is
     // nothing to show on that screen: back to the list, with the message.
     if (state.view === 'applying' && state.apply && !state.apply.started) {
+      const held = (state.apply.then || []).length;       // ticked Other rows wait for a system run that never started
       state.apply = null;
       state.view = allItems().length ? 'updates' : 'empty';
-      toast(msg, false, 7000);
+      toast(msg + (held ? ` The ticked Other software did not run either; ${held === 1 ? 'it is' : 'they are'} still ticked.` : ''), false, 7000);
       return;
     }
     if (state.view !== 'applying' && state.view !== 'held' && state.view !== 'doctor') state.view = 'error';
@@ -168,7 +171,11 @@
     for (const id of [...state.expanded]) if (!state._seen.has(id) && !_clusters.has(id)) state.expanded.delete(id);
     for (const id of [...state.openClusters]) if (!_clusters.has(id)) state.openClusters.delete(id);
     const ewIds = new Set(((doc.elsewhere && doc.elsewhere.items) || []).map(i => i.id));
-    for (const id of Object.keys(state.ewRuns)) if (!ewIds.has(id) && state.ewRuns[id].phase !== 'running') delete state.ewRuns[id];
+    // the result screen keeps the outcome of the rows Update now ran, even once a check drops them
+    const shown = new Set((state.apply && state.apply.then) || []);
+    for (const id of Object.keys(state.ewRuns)) if (!ewIds.has(id) && !shown.has(id) && state.ewRuns[id].phase !== 'running') delete state.ewRuns[id];
+    // a ticked row stays ticked while it exists and can still be updated from its row
+    for (const id of [...state.ewTicked]) { const it = ewItemById(id); if (!it || !ewTickable(it)) state.ewTicked.delete(id); }
 
     // Track how long the collector has been "checking": per check (a new stub carries a new
     // generated_at), not per push (the file monitor may push the same stub more than once).
@@ -320,6 +327,7 @@
         else if (s.state === 'pending' && !a.failed) { s.state = 'skip'; s.detail = 'nothing to do'; }
       });
       if (ev.summary) pushLog(a, ev.summary, a.failed || a.warned ? 'warn' : 'ok');
+      if ((a.then || []).length) ewThenAfter(a);
       state.view = 'done';
       render();
       return;
@@ -674,7 +682,9 @@
   }
 
   function renderHeader() {
-    const n = state.selected.size;
+    const nOther = ewTickedIds().length;          // 2026-11-10: ticked Other-software rows run after the system ones
+    const n = state.selected.size + nOther;
+    const nowTitle = nOther ? ` title="${state.selected.size ? `${plural(state.selected.size, 'system update')}, then ` : ''}${plural(nOther, 'Other software update')} (one after another)"` : '';
     const h = host();
     const os = h.os || 'Fedora';
     let sub;
@@ -707,9 +717,11 @@
       const nSec = securityCount();
       html = `<button class="btn" data-action="select-security" ${nSec ? '' : 'disabled'} title="Select only the updates that carry a security advisory">Security only</button>
               <button class="btn" data-action="select-safe" title="Select everything except conflicts, plus any critical security fix">Safe only</button>
-              <button class="btn primary" data-action="update-now" ${n ? '' : 'disabled'}>Update now <span class="count">${n}</span></button>`;
+              <button class="btn primary" data-action="update-now" ${n ? '' : 'disabled'}${nowTitle}>Update now <span class="count">${n}</span></button>`;
     } else if (state.view === 'empty' || state.view === 'error') {
       html = `<button class="btn" data-action="check-now">Check now</button>`;
+      // nothing pending in dnf/Flatpak/fwupd, but Other-software rows can be ticked: they need the button too
+      if (state.view === 'empty' && ewItems().some(ewTickable)) html += `<button class="btn primary" data-action="update-now" ${n ? '' : 'disabled'}${nowTitle}>Update now <span class="count">${n}</span></button>`;
     } else if (state.view === 'loading' && showCheckButton()) {
       html = `<button class="btn" data-action="check-now" data-force="1">Check for updates</button>`;
     }
@@ -800,11 +812,12 @@
   }
 
   /* ---- Other software (npm, pipx, uv, cargo, HA, podman, GNOME ext, AppImage) ---- */
-  // A top-level state.json object (`elsewhere`, its name until 2026-10-31), never a group: no
-  // checkbox, never selected, never in a plan, never counted in the summary or the top-bar
-  // badge. Each row says what the thing is and who uses it, and offers one button by its
-  // `action`: Update / Install in HA (otherUpdate, streamed into the row), Open, or Copy.
-  // CONTRACT.md "Other software".
+  // A top-level state.json object (`elsewhere`, its name until 2026-10-31), never a group: never
+  // in `selected` or an apply plan, never counted in the summary or the top-bar badge. Each row
+  // says what the thing is and who uses it, and offers one button by its `action`: Update /
+  // Install in HA (otherUpdate, streamed into the row), Open, or Copy. Since 2026-11-10 an
+  // Update / Install in HA row also has a checkbox of its own (`ewTicked`): ticked rows run after
+  // Update now's system run, through otherUpdateMany. CONTRACT.md "Other software".
   const EW_SRC = { npm: 'npm', pipx: 'pipx', uv: 'uv', cargo: 'cargo', ha: 'HA', podman: 'podman', 'gnome-ext': 'GNOME ext', appimage: 'AppImage' };
   const EW_BADGE = { major: ['major', 'MAJOR'], minor: ['minor', 'MINOR'], patch: ['patch', 'PATCH'], unknown: ['grey', 'NEW VERSION'] };
   // Where a row lives, in the order the section shows them (CONTRACT.md "Front page", 2026-10-31 c)
@@ -850,6 +863,38 @@
     return it.status === 'ok' && (it.action === 'update' || it.action === 'ha_install') && !it.confirm
       && it.severity !== 'major' && !it.warning && !it.pulled && !/^(core|os|supervisor|firmware)$/.test(it.kind || '')
       && (it.severity === 'patch' || it.source === 'podman' || (it.source === 'ha' && /^(addon|integration)$/.test(it.kind || '')));
+  }
+  // Ticked for Update now (2026-11-10, same rule as Bridge.other_tickable): a row whose own button
+  // is Update / Install in HA. Unticked by default, and no Select all / Safe only / Security only
+  // ever ticks one: only a click on its checkbox does, so a major version is never swept in.
+  function ewTickable(it) {
+    return !!it && it.status === 'ok' && (it.action === 'update' || it.action === 'ha_install') && !/^(core|os|supervisor|firmware)$/.test(it.kind || '');
+  }
+  function ewItemById(id) { return ewItems().find(i => i.id === id) || null; }
+  function ewTickedIds() { return [...state.ewTicked].filter(id => ewTickable(ewItemById(id))); }
+  // the ticked rows through otherUpdateMany (no confirmation: ticking was it); rows stream as in a bulk run
+  function ewStartTicked(ids) {
+    ids.forEach(id => { delete state.ewRuns[id]; });
+    state.ewBatch = { group: null, ticked: true, ids: ids.slice(), done: [], stopping: false };
+    state.ewTickedRun = ids.slice();
+    send({ cmd: 'otherUpdateMany', ids, ticked: true });
+  }
+  // Update now's system run reached its verdict: a good one starts the ticked rows, a failed one keeps them
+  function ewThenAfter(a) {
+    const ids = a.then.filter(id => ewTickable(ewItemById(id)));
+    a.thenRows = {};
+    a.then.forEach(id => { const it = ewItemById(id); if (it) a.thenRows[id] = it; });
+    if (a.failed) { a.thenState = 'held'; return; }
+    a.then = ids;
+    if (!ids.length) { a.thenState = 'gone'; return; }
+    a.thenState = 'running';
+    ewStartTicked(ids);
+  }
+  // a ticked run spans groups: its "Updating i of N" sits on the group of the row that runs now
+  function ewBatchGroup(b) { const id = b.ids.find(x => !b.done.includes(x)) || b.ids[b.ids.length - 1]; const it = ewItemById(id); return it ? ewGroupOf(it) : null; }
+  function ewBatchRun(b) {
+    const i = Math.min(b.done.length + 1, b.ids.length);
+    return `<span class="ew-bulk-run"><span class="spin"></span><span>Updating ${i} of ${b.ids.length}${b.stopping ? ', stopping after this one' : ''}</span>${b.stopping ? '' : `<button class="btn small ghost" data-action="ew-bulk-stop">Stop after this one</button>`}</span>`;
   }
   // Remove uninstalls it (otherRemove): only an add-on the backend marked `unused: true`, with its
   // Supervisor slug. The same rule as elsewhere_apply.remove_refusal (CONTRACT.md "Remove").
@@ -992,13 +1037,18 @@
   }
   // One line per row: [source tag, This PC only] name, version, at most one muted hint, badge,
   // [Remove?], the action button, chevron. Everything else is in the details (the chevron).
-  function renderEwRow(it, grp) {
+  // `ticks`: the card has tickable rows, so every row gets the checkbox column (an empty slot when
+  // the row cannot be ticked) and the names line up; the result screen's copy passes false
+  function renderEwRow(it, grp, ticks) {
     const open = state.ewOpen.has(it.id);
     const run = state.ewRuns[it.id];
     const hint = open ? null : ewHint(it);        // open: the details say it in full
     const queued = state.ewBatch && state.ewBatch.ids.includes(it.id) && !run;
+    const on = state.ewTicked.has(it.id);
+    const cb = !ticks ? '' : !ewTickable(it) ? '<span class="cb-slot" aria-hidden="true"></span>'
+      : `<span class="cb ${on ? 'on' : ''}" data-action="ew-tick" data-id="${esc(it.id)}" role="checkbox" aria-checked="${on}" tabindex="0" title="${esc((on ? 'Leave it out of Update now' : 'Include in Update now (after the system updates): ') + (on ? '' : ewDoes(it)))}"></span>`;
     let html = `<div class="row ew-row ${open ? 'open' : ''}" data-action="ew-expand" data-id="${esc(it.id)}" data-status="${esc(it.status)}" data-severity="${esc(it.severity)}" data-act="${esc(it.action || '')}" data-safe="${ewSafe(it) ? 1 : 0}" role="button" aria-expanded="${open}">
-      ${grp === 'pc' ? `<span class="src mono">${esc(EW_SRC[it.source] || it.source)}</span>` : ''}
+      ${cb}${grp === 'pc' ? `<span class="src mono">${esc(EW_SRC[it.source] || it.source)}</span>` : ''}
       <div class="body"><div class="hd"><span class="name" title="${esc(it.name)}">${esc(ewName(it))}</span><span class="ver">${ewVersion(it)}</span></div>
         ${hint ? `<div class="ew-hint ${hint[0]}" title="${esc(hint[1])}">${hint[0] === 'warn' ? '<span class="ic" aria-hidden="true">⚠</span>' : ''}${esc(hint[1])}</div>` : ''}</div>
       ${ewBadge(it)}${ewSecondary(it)}<span class="ew-btn">${ewButton(it)}</span>${svgChev}</div>`;
@@ -1052,10 +1102,7 @@
       return `<span class="ew-bulk-run ew-ha-restart"><span class="spin"></span><span>${esc(state.ewHaRestart.msg || 'Restarting Home Assistant…')}</span></span>`;
     }
     const b = state.ewBatch;
-    if (b && b.group === g.id) {
-      const i = Math.min(b.done.length + 1, b.ids.length);
-      return `<span class="ew-bulk-run"><span class="spin"></span><span>Updating ${i} of ${b.ids.length}${b.stopping ? ', stopping after this one' : ''}</span>${b.stopping ? '' : `<button class="btn small ghost" data-action="ew-bulk-stop">Stop after this one</button>`}</span>`;
-    }
+    if (b && (b.ticked ? ewBatchGroup(b) === g.id : b.group === g.id)) return ewBatchRun(b);
     const safe = rows.filter(ewSafe);
     if (safe.length < 2) return '';      // one safe row already has its own Update button
     return `<button class="btn small ew-bulk" data-action="ew-bulk" data-group="${esc(g.id)}"${ewBusy() ? ' disabled title="Another update is running"'
@@ -1074,9 +1121,9 @@
     const note = [`Outside dnf and Flatpak`,
       failed ? `<span class="bad">${failed} check${failed === 1 ? '' : 's'} failed</span>` : '',
       cant ? `${cant} can’t check` : '', e.checked_at ? `checked ${hhmm(e.checked_at)}` : ''].filter(Boolean).join(' · ');
-    const body = groups.length ? groups.map(({ g, rows }) => `<div class="ew-group" data-group="${esc(g.id)}">
+    const body = groups.length ? groups.map(({ g, rows }) => { const ticks = rows.some(ewTickable); return `<div class="ew-group" data-group="${esc(g.id)}">
         <div class="ew-sub"><span class="ew-sub-t">${esc(g.title)}<span class="n">${rows.length}</span></span>${ewBulkControl(g, rows)}</div>
-        <div class="card ew-card ${esc(g.id)}">${rows.map(it => renderEwRow(it, g.id)).join('')}</div></div>`).join('')
+        <div class="card ew-card ${esc(g.id)}${ticks ? ' ticks' : ''}">${rows.map(it => renderEwRow(it, g.id, ticks)).join('')}</div></div>`; }).join('')
       : `<div class="card ew-card"><div class="ew-empty">All ${checked} thing${checked === 1 ? '' : 's'} checked outside dnf and Flatpak ${checked === 1 ? 'is' : 'are'} current.</div></div>`;
     return `<div class="group-h ew-h"><span class="group-title">OTHER SOFTWARE<span class="n">${ewStale()}</span></span>
         <span class="ew-note">${note}</span></div>${body}`;
@@ -1113,9 +1160,15 @@
   function onOther(ev) {
     if (!ev) return;
     if (ev.step === 'batch') {          // the bridge's queue is empty: the bulk run is over
-      const b = state.ewBatch, info = ev.batch || {};
-      state.ewBatch = null;
+      const b = state.ewBatch, info = ev.batch || {}, tb = state.ewTickedRun;
+      state.ewBatch = null; state.ewTickedRun = null;
+      if (state.apply && state.apply.thenState === 'running') state.apply.thenState = 'done';
       if (b && info.stopped) toast(`Stopped. ${b.ids.length - (info.ran || []).length} not started.`, false, 4000);
+      else if (tb && state.view !== 'done') {     // the result screen says it per row; the list gets one line
+        const runs = tb.map(id => state.ewRuns[id]).filter(r => r && r.phase === 'done');
+        const ok = runs.filter(r => r.ok).length, bad = runs.length - ok;
+        toast(`Other software: ${ok} done${bad ? `, ${bad} failed` : ''}.`, false, 5000);
+      }
       render();
       return;
     }
@@ -1140,8 +1193,11 @@
       if (o.item && state.doc && state.doc.elsewhere && Array.isArray(state.doc.elsewhere.items)) {
         state.doc.elsewhere.items = state.doc.elsewhere.items.map(i => i.id === o.item.id ? o.item : i);
       }
+      const a = state.apply;
+      if (o.item && a && a.thenRows && a.thenRows[id]) a.thenRows[id] = o.item;     // the result screen's copy of the row
       const b = state.ewBatch;
       if (b && b.ids.includes(id)) {
+        if (b.ticked && r.result !== 'refused' && r.result !== 'skipped') state.ewTicked.delete(id);   // it ran: done with its tick
         if (!b.done.includes(id)) b.done.push(id);
         if (b.done.length >= b.ids.length) state.ewBatch = null;     // belt and braces: no batch event needed
       } else if (o.result === 'refused' && ev.synthetic) toast(r.summary, false, 6000);
@@ -1601,15 +1657,18 @@
 
     // "Fix it" = ask Claude (read-only) what happened and what to do; it proposes a fix
     // that runs only on a second click. Check again merely re-runs the collector.
-    const fixBtn = (cls) => noClaude() ? noClaudeNote() : `<button class="btn ${cls}" data-action="fix-it" title="Ask Claude to look into it and propose a fix">Fix it</button>`;
-    const restartBtns = `<button class="btn primary" data-action="restart-now" ${rel ? `data-release="${esc(rel.version)}"` : ''} ${kmodBad ? 'disabled title="Blocked: the NVIDIA module was not verified"' : rel ? `title="Restart into the Fedora ${esc(rel.version)} installer"` : ''}>Restart now</button><button class="btn" data-action="restart-later">Later</button>`;
+    // 2026-11-10: while the ticked Other-software rows run, nothing here may restart or leave the screen
+    const hold = a.thenState === 'running';
+    const held = hold ? ' disabled title="Wait: Other software is still updating"' : '';
+    const fixBtn = (cls) => noClaude() ? noClaudeNote() : `<button class="btn ${cls}" data-action="fix-it"${held || ' title="Ask Claude to look into it and propose a fix"'}>Fix it</button>`;
+    const restartBtns = `<button class="btn primary" data-action="restart-now" ${rel ? `data-release="${esc(rel.version)}"` : ''} ${kmodBad ? 'disabled title="Blocked: the NVIDIA module was not verified"' : hold ? held : rel ? `title="Restart into the Fedora ${esc(rel.version)} installer"` : ''}>Restart now</button><button class="btn" data-action="restart-later"${held}>Later</button>`;
     const actions = failed && rel
       ? `${restartBtns}<button class="btn" data-action="back-to-list">Back to updates</button>${fixBtn('')}`
       : failed
       ? `<button class="btn" data-action="back-to-list">Back to updates</button><button class="btn" data-action="check-now">Check again</button>${fixBtn('primary')}`
       : kmodBad ? `${restartBtns}${fixBtn('primary')}`
       : reboot ? restartBtns + (warned ? fixBtn('') : '')
-      : `<button class="btn primary" data-action="restart-later">Done</button>${warned ? fixBtn('') : ''}`;
+      : `<button class="btn primary" data-action="restart-later"${held}>Done</button>${warned ? fixBtn('') : ''}`;
     const tone = failed || kmodBad ? 'bad' : warned ? 'warn' : '';
     const title = failed ? (someLanded ? 'Some updates failed' : 'Update failed')
       : kmodBad ? 'Applied — do not reboot yet'
@@ -1621,9 +1680,33 @@
       ${counts ? `<div class="tally">${esc(counts)}</div>` : ''}
       ${missing ? `<div class="missing">${esc(missing)}</div>` : ''}
       ${rb ? `<div class="rebootline ${rbCls}">${esc(rb)}</div>` : ''}
+      ${renderThen(a)}
       <div class="actions">${actions}</div>
       ${failed || warned || a.details ? details : ''}
     </div></div>`;
+  }
+
+  // The Other-software rows ticked for Update now, on the result screen (2026-11-10): the same rows
+  // as in the list, streaming one after another (the bulk run's "Updating i of N" and Stop), then
+  // each one's outcome. After a failed system run: one line saying they did not run.
+  function renderThen(a) {
+    const ids = a.then || [];
+    if (!ids.length || !a.thenState || a.thenState === 'gone') return '';
+    if (a.thenState === 'held') {
+      const n = ids.filter(id => state.ewTicked.has(id)).length || ids.length;
+      return `<div class="then-held">${esc(`The ${plural(n, 'ticked Other software update')} did not run because the system update failed. ${n === 1 ? 'It is' : 'They are'} still ticked.`)}</div>`;
+    }
+    const rows = ids.map(id => (a.thenRows || {})[id] || ewItemById(id)).filter(Boolean);
+    const runs = ids.map(id => state.ewRuns[id]).filter(r => r && r.phase === 'done');
+    const ok = runs.filter(r => r.ok).length, bad = runs.filter(r => !r.ok && r.result !== 'refused' && r.result !== 'skipped').length;
+    const b = state.ewBatch && state.ewBatch.ticked ? state.ewBatch : null;
+    const head = b ? ewBatchRun(b) : a.thenState === 'running' ? `<span class="ew-bulk-run"><span class="spin"></span><span>${esc((state.ewHaRestart && state.ewHaRestart.msg) || 'Finishing…')}</span></span>`
+      : `<span class="then-sum">${esc([ok ? `${ok} done` : '', bad ? `${bad} failed` : '', ids.length - ok - bad ? `${ids.length - ok - bad} not run` : ''].filter(Boolean).join(' · '))}</span>`;
+    return `<div class="ew-then">
+      <div class="ew-sub"><span class="ew-sub-t">Other software<span class="n">${rows.length}</span></span>${head}</div>
+      <div class="card ew-card pc">${rows.map(it => renderEwRow(it, 'pc', false)).join('')}</div>
+      ${a.thenState === 'running' ? '<p class="then-note">The buttons below wait until these finish.</p>' : ''}
+    </div>`;
   }
 
   /* ---- Fix it (rivet-doctor) ---- */
@@ -1944,23 +2027,37 @@
     'toggle-routine': (t) => { state.routineOpen = t.dataset.open !== '1'; writeLS('rivet.routineOpen', state.routineOpen ? '1' : '0'); },
     'update-now': (t) => {
       const ids = [...state.selected];
-      if (!ids.length) return;
+      const other = ewTickedIds();               // 2026-11-10: ticked Other software, after the system run
+      if (!ids.length && !other.length) return;
       // One run at a time: a second click (double-click, or a click that lands before the
       // first progress event) is ignored until a terminal event arrives.
       if (state.view === 'applying' || (state.apply && !state.apply.result)) return;
+      if (other.length && ewBusy()) { toast('Other software is still updating. Try again when it finishes.', false, 5000); return; }
       if (t && t.disabled !== undefined) t.disabled = true;
+      if (!ids.length) {                         // only Other rows: no system run, they stream in their rows
+        ewStartTicked(other);
+        actions['scroll-elsewhere']();
+        return;
+      }
       state.apply = newApply(ids);
+      state.apply.then = other;
       state.view = 'applying';
       send({ cmd: 'apply', items: ids });
+    },
+    'ew-tick': (t) => {
+      const it = ewItemById(t.dataset.id);
+      if (!it || !ewTickable(it)) return;
+      if (state.ewTicked.has(it.id)) state.ewTicked.delete(it.id); else state.ewTicked.add(it.id);
     },
     'toggle-drawer': () => { if (state.apply) state.apply.drawer = !state.apply.drawer; },
     'toggle-details': () => { if (state.apply) state.apply.details = !state.apply.details; },
     'restart-now': (t) => {
+      if (checkBusy()) return;                   // the ticked Other rows still run (the button is disabled too)
       const v = t && t.dataset && t.dataset.release;
       toast(v ? `Restarting into the Fedora ${v} installer…` : 'Restarting…', true);
       send(v ? { cmd: 'restart', release: Number(v) } : { cmd: 'restart' });
     },
-    'restart-later': () => { requestCheck(false); },
+    'restart-later': () => { if (!checkBusy()) requestCheck(false); },
     'back-to-list': () => {
       // the bridge holds state pushes back while the doctor view is up; tell it we left
       if (state.view === 'doctor' || state.doctor) send({ cmd: 'leaveDoctor' });
@@ -2099,7 +2196,8 @@
   // "Check for updates" would null the apply/doctor record, and the next progress event
   // would rebuild a blank step list: refuse while anything is mid-flight.
   function checkBusy() {
-    return state.view === 'applying' || (state.view === 'held' && heldBusy()) || (state.view === 'doctor' && doctorBusy());
+    return state.view === 'applying' || (state.view === 'held' && heldBusy()) || (state.view === 'doctor' && doctorBusy())
+      || (state.view === 'done' && !!state.apply && state.apply.thenState === 'running');   // ticked Other rows after Update now
   }
   // Every path that asks the app for a fresh check goes through here, so the UI knows
   // the check is its own (see checkingIsStale). keepList: the list on screen is still
@@ -2429,7 +2527,8 @@
       case 'restart': later(1200, () => toast('(mock) logind Reboot(true) would be called here.', false, 3000)); break;
       case 'openUrl': window.open(msg.url, '_blank', 'noopener'); break;
       case 'otherUpdate': mockOther(msg.id); break;
-      case 'otherUpdateMany': mockOtherMany(msg.ids || []); break;
+      // like the bridge: the safe set, or for rows ticked for Update now (2026-11-10) any row-updatable one
+      case 'otherUpdateMany': mockOtherMany((msg.ids || []).filter(id => (msg.ticked ? ewTickable : ewSafe)(ewItemById(id) || {}))); break;
       case 'otherStop': if (mockBatch) mockBatch.stop = true; break;
       case 'otherRemove': mockRemove(msg.id); break;
       case 'otherFix': later(1200, () => receive({ type: 'other', event: { other_id: msg.id, step: 'done', status: 'ok', summary: 'Fixed: Home Assistant needed a restart to load it (mock: nothing ran).', other: { id: msg.id, result: 'fixed', item: null } } })); break;
