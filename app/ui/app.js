@@ -105,6 +105,7 @@
       else if (msg.type === 'other') onOther(msg.event);
       else if (msg.type === 'caps') { state.caps = Object.assign({}, state.caps, msg.caps || {}); render(); }
       else if (msg.type === 'health') onHealth(msg);
+      else if (msg.type === 'steam') onSteam(msg.event);
       else if (msg.type === 'error') onError(msg.msg || 'Unknown error');
     } catch (err) {
       console.error('[rivet] receive(' + msg.type + ') failed: ' + ((err && err.stack) || err));
@@ -126,6 +127,15 @@
     }
     if (state.view !== 'applying' && state.view !== 'held' && state.view !== 'doctor') state.view = 'error';
     render();
+  }
+
+  // The Steam-only re-check (2026-11-10). Its state.json change arrives as a normal state push;
+  // this only says how a Quit Steam went (focus re-checks are silent).
+  function onSteam(ev) {
+    if (!ev || ev.reason !== 'quit') return;
+    if (ev.steam_running === false) toast('Steam closed. Flatpak runtime updates are unblocked.', false, 4000);
+    else if (ev.steam_running === true) toast(`Steam did not quit within ${Math.max(1, Math.round((ev.waited_ms || 5000) / 1000))} s. Quit it from Steam itself (Steam > Exit); Rivet notices when you come back to this window.`, false, 9000);
+    else toast('Could not tell whether Steam quit' + (ev.skipped ? ` (${ev.skipped})` : '') + '. Check again to be sure.', false, 7000);
   }
 
   /* ------------------------------------------------------------------ */
@@ -2415,7 +2425,7 @@
       case 'verifyHeld': mockHeld('verify', msg.ref); break;
       case 'keepHeld': clearMockTimers(); mockHeld('keep', msg.ref); break;
       case 'rollbackHeld': clearMockTimers(); mockHeld('rollback', msg.ref); break;
-      case 'quitSteam': later(700, () => { mockSteam(false); toast('Steam closed. Flatpak runtime updates are unblocked.', false, 3000); }); break;
+      case 'quitSteam': later(700, () => { mockSteam(false); receive({ type: 'steam', event: { reason: 'quit', steam_running: false, changed: true, wrote: true, skipped: null, waited_ms: 300 } }); }); break;
       case 'restart': later(1200, () => toast('(mock) logind Reboot(true) would be called here.', false, 3000)); break;
       case 'openUrl': window.open(msg.url, '_blank', 'noopener'); break;
       case 'otherUpdate': mockOther(msg.id); break;

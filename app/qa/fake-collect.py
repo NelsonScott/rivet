@@ -14,6 +14,8 @@ doc = json.load(open(os.path.join(here, "..", "ui", "sample-state.json")))
 doc["status"] = "ok"
 p = os.path.join(os.environ.get("RIVET_STATE_DIR") or os.path.expanduser("~/.local/state/rivet"), "state.json")
 os.makedirs(os.path.dirname(p), exist_ok=True)
+with open(os.path.join(os.path.dirname(p), "fake-collect.calls"), "a") as _fh:   # qa-e2e "steam" counts these
+    _fh.write(" ".join(sys.argv) + "\n")
 
 if os.environ.get("RIVET_FAKE_SCENARIO") == "release":
     sys.path.insert(0, os.path.join(here, "..", "..", "backend"))

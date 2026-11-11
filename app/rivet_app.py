@@ -88,6 +88,10 @@ TYPE_ZOOM = {"compact": 1.0, "comfortable": 1.12}
 DEFAULT_SIZE = (1280, 860)
 
 STEAM_REF = "com.valvesoftware.Steam"
+# the Steam-only re-check (2026-11-10): the backend sits next to app/ (source tree and RPM alike)
+STEAM_CHECK = os.path.join(os.path.dirname(HERE), "backend", "steam_check.py")
+STEAM_FOCUS_GAP_S = 5        # focus re-checks: at most one per this many seconds
+STEAM_QUIT_WAIT_S = 5        # after Quit Steam: how long Steam may take to leave `flatpak ps`
 
 
 def log(*a):
@@ -146,6 +150,9 @@ class Bridge:
         self._other = None           # the running Other-software update, if any
         self._batch = None           # "Update the safe ones": {ids, queue, ran, refused, stop}
         self._health = None          # the running `rivet-doctor health` process, if any
+        self._steam = None           # the running Steam-only re-check, if any (2026-11-10)
+        self._steam_last = -1e9      # monotonic start of the last one (focus debounce)
+        self._steam_after = False    # a Quit Steam re-check waits for a blocker to end
 
     BUSY_MSG = "Not now: another operation is still running. Wait for it to finish."
     NO_CLAUDE = ("Fix it needs Claude Code: install it (claude.com/claude-code), run `claude` once "
@@ -196,6 +203,9 @@ class Bridge:
         return self._applying or self.doctor_running
 
     def _notify_busy(self):
+        if self._steam_after and not self.busy:
+            # a Quit Steam re-check waited for this operation; idle, so the flags settle first
+            GLib.idle_add(lambda: (self._steam_resume(), False)[1])
         cb = self.on_busy_changed
         if cb is None:
             return
@@ -571,6 +581,7 @@ class Bridge:
         finally:
             self._release(proc)
             self.push_state()
+            self._steam_resume()
 
     def cmd_apply(self, msg):
         items = [str(i) for i in (msg.get("items") or [])]
@@ -1258,8 +1269,106 @@ class Bridge:
             log("flatpak kill: %s" % exc.message)
         finally:
             self._release(proc)
-        # let the collector recompute blocked_by, which is its job per contract
-        GLib.timeout_add(600, lambda: (self.cmd_refresh({}), False)[1])
+        # 2026-11-10: no full collect (21 s) to learn one fact: poll `flatpak ps` until Steam
+        # is gone (at most STEAM_QUIT_WAIT_S), then re-derive the Steam rows in state.json
+        self.steam_recheck("quit")
+
+    # ------------------------------------------------- Steam-only re-check (2026-11-10)
+    # backend/steam_check.py: `flatpak ps` + the collector's own rules on the Steam rows only,
+    # written to state.json when something changed (checked_at kept). Runs after Quit Steam and
+    # when the window gains focus (at most once per STEAM_FOCUS_GAP_S), never next to anything
+    # that writes state.json or redraws the screen: an apply, a held trial, an Other software
+    # run or bulk run, a doctor run, a collector.
+    def _steam_blocker(self):
+        if self._collect_proc is not None:
+            return "a check is running"
+        if self.applying or self._held_watch is not None:
+            return "an update is running"
+        if self._batch is not None or self._other is not None:
+            return "an Other software run is going"
+        if self.doctor_running:
+            return "the doctor is running"
+        return None
+
+    def steam_recheck(self, reason="focus"):
+        """Start one Steam-only re-check; False when it did not start (debounced, busy, or
+        nothing on disk to correct). A Quit Steam that cannot run now runs when the blocker ends."""
+        quit_ = reason == "quit"
+        if not quit_ and time.monotonic() - self._steam_last < STEAM_FOCUS_GAP_S:
+            return False
+        if self._steam is not None or self._steam_blocker():
+            if quit_:
+                self._steam_after = True
+                log("steam check after Quit Steam: waiting (%s)"
+                    % ("a re-check is running" if self._steam is not None else self._steam_blocker()))
+            return False
+        why = None
+        if not os.path.isfile(STATE_FILE):
+            why = "no state.json yet"          # demo sample, first run: nothing to correct
+        elif not os.path.isfile(STEAM_CHECK):
+            why = "%s is missing" % STEAM_CHECK
+        else:
+            argv = [sys.executable, STEAM_CHECK]
+            if quit_:
+                argv += ["--wait-gone", str(STEAM_QUIT_WAIT_S)]
+            try:
+                proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
+            except GLib.Error as exc:
+                why = "could not start: %s" % exc.message
+        if why:
+            log("steam check (%s): not run, %s" % (reason, why))
+            if quit_:                          # the page is waiting to hear how Quit Steam went
+                self.push({"type": "steam", "event": {"reason": reason, "steam_running": None, "changed": False,
+                                                      "wrote": False, "skipped": why, "waited_ms": 0}})
+            return False
+        self._steam_last = time.monotonic()
+        self._steam = {"proc": proc, "reason": reason, "t0": time.monotonic()}
+        self._track(proc)
+        proc.communicate_utf8_async(None, None, self._steam_finished, self._steam)
+        return True
+
+    def _steam_finished(self, proc, res, ctx):
+        out = None
+        try:
+            try:
+                _ok, text, _err = proc.communicate_utf8_finish(res)
+            except GLib.Error as exc:
+                log("steam check: %s" % exc.message)
+                text = ""
+            for line in (text or "").splitlines():
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    if line.strip():
+                        log("steam check: %s" % line[:300])
+                    continue
+                if isinstance(ev, dict):
+                    out = ev
+            if out is None:
+                rc, how = self._exit_info(proc)
+                out = {"steam_running": None, "changed": False, "wrote": False,
+                       "skipped": "steam check %s without a result" % how, "waited_ms": 0}
+            ms = int((time.monotonic() - ctx["t0"]) * 1000)
+            log("steam check (%s): steam_running=%s wrote=%s skipped=%s in %d ms"
+                % (ctx["reason"], out.get("steam_running"), out.get("wrote"), out.get("skipped"), ms))
+            if out.get("wrote"):
+                if self.applying or self.doctor_active:
+                    self._state_pending = True
+                else:
+                    self.push_state()
+            self.push({"type": "steam", "event": dict(out, reason=ctx["reason"], ms=ms)})
+        except Exception:
+            log("internal error in the steam check reader:\n%s" % traceback.format_exc())
+        finally:
+            self._steam = None
+            self._release(proc)
+            self._steam_resume()
+
+    def _steam_resume(self):
+        """Run the Quit Steam re-check that had to wait, once nothing blocks it any more."""
+        if self._steam_after and self._steam is None and not self._steam_blocker():
+            self._steam_after = False
+            self.steam_recheck("quit")
 
     def cmd_restart(self, msg):
         if self.last_kmod_verified is False:
@@ -1878,9 +1987,11 @@ class RivetApp(Adw.Application if HAVE_ADW else Gtk.Application):
             log("activate: Rivet is already open; raising its window")
             self._hidden_while_busy = False
             self.win.present()
+            self._recheck_steam()
             return
         self.build()
         self.win.present()
+        self._recheck_steam()          # opened: not only on focus (a window may open unfocused)
 
     def _on_busy_changed(self, busy):
         """Bridge callback: an operation that outlived a close has finished."""
@@ -1936,6 +2047,7 @@ class RivetApp(Adw.Application if HAVE_ADW else Gtk.Application):
         self._apply_type_size(self.bridge.settings.get("type_size", "compact"))
 
         self.win.connect("close-request", self.on_close)
+        self.win.connect("notify::is-active", self._on_active)
         qa_js = os.environ.get("RIVET_QA_JS")
         if qa_js:
             self.webview.connect("load-changed", self._on_load_changed, qa_js)
@@ -1960,6 +2072,16 @@ class RivetApp(Adw.Application if HAVE_ADW else Gtk.Application):
             view.evaluate_javascript(js, -1, None, None, None, None, None)
         except TypeError:
             view.evaluate_javascript(js, -1, None, None, None)
+
+    def _on_active(self, win, _pspec):
+        if win.is_active():
+            self._recheck_steam()
+
+    def _recheck_steam(self):
+        """Opened or back in focus: is Steam still what state.json says? (2026-11-10; the bridge
+        debounces it and skips it while anything runs)"""
+        if self.bridge:
+            self.bridge.steam_recheck("focus")
 
     def _apply_type_size(self, size):
         """Type size = WebKit page zoom: every look, its type and its layout scale as one."""
@@ -2011,6 +2133,12 @@ class RivetApp(Adw.Application if HAVE_ADW else Gtk.Application):
             self._apply_type_size(msg.get("value"))
         if msg.get("cmd") == "qaShot":
             self._qa_shot(str(msg.get("name") or "shot"))
+            return
+        if msg.get("cmd") == "qaFocus" and os.environ.get("RIVET_QA_JS"):
+            # QA only: a window in the headless session never becomes active, so focus cannot
+            # move away and back; this runs what a real focus change runs
+            log("qa: focus")
+            self._recheck_steam()
             return
         self.bridge.handle(raw)
 
