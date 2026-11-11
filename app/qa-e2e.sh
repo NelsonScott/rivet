@@ -21,6 +21,10 @@
 # qa/fake-claude.py instead of claude); "other-real" looks at THIS box's state.json, presses
 # nothing. other / other-row / other-bulk run with show_containers on in the scratch settings.json. "looks" picks every look x light/dark through Preferences > Look and scans the painted
 # text contrast (qa/driver-looks.js); "looks-real" shoots the looks on THIS box's state.json.
+# "steam" (2026-11-10) drives the Steam-only re-check (qa/driver-steam.js): focus and Quit Steam
+# against qa/fake-flatpak.sh, and checks that the fake collector never ran. Every scenario gets
+# that fake as `flatpak` (Steam running unless the scratch state.json says otherwise), so no run
+# ever asks the real Steam.
 # warn/fail/crash also open
 # "Show details" and save PNGs of the real WebKit view to $OUT/shots/. After each run
 # it measures the app's CPU while idle: the 2026-09-18 bug was the main loop spinning
@@ -28,7 +32,7 @@
 set -u
 . "$(dirname "$(readlink -f "$0")")/qa/private-runtime.sh"   # own runtime dir: keeps the live document portal
 OUT=${1:-/tmp/rivet-e2e}; mkdir -p "$OUT/shots"; shift || true
-SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix looks abuse abuse-noclaude second-instance release}
+SCENARIOS=${*:-ok warn fail crash held doctor recheck other other-row other-bulk other-remove other-fix looks abuse abuse-noclaude second-instance release steam}
 HERE=$(dirname "$(readlink -f "$0")")
 
 gnome-shell --headless --wayland --no-x11 --virtual-monitor 1280x860 > "$OUT/shell.log" 2>&1 &
@@ -136,14 +140,38 @@ for SC in $SCENARIOS; do
     HOME="$QAHOME" RIVET_STATE_DIR="$QAHOME/.local/state/rivet" RIVET_FAKE_SCENARIO=held \
       RIVET_NO_NOTIFY=1 python3 "$HERE/qa/fake-collect.py"
   fi
+  if [ "$SC" = steam ]; then
+    # state.json says Steam runs (the sample: 3 runtime rows blocked), stamped now so the
+    # after-a-boot re-collect stays out of it; the fake flatpak says Steam is gone
+    DRIVER=$HERE/qa/driver-steam.js; LIMIT=90
+    mkdir -p "$QAHOME/.local/state/rivet"
+    python3 -c "import json,sys,datetime; d=json.load(open(sys.argv[1])); d['generated_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); json.dump(d,open(sys.argv[2],'w'))" \
+      "$HERE/ui/sample-state.json" "$QAHOME/.local/state/rivet/state.json"
+  fi
+  # qa/fake-flatpak.sh as `flatpak` (2026-11-10): Steam "runs" when the scratch state.json says so
+  # (or there is none: the demo sample says it does), except in "steam", which starts with it gone
+  FAKE_STEAM_DIR=$QAHOME/fake-steam; mkdir -p "$QAHOME/fakebin" "$FAKE_STEAM_DIR"
+  ln -sfn "$HERE/qa/fake-flatpak.sh" "$QAHOME/fakebin/flatpak"
+  if [ "$SC" != steam ] && python3 -c "import json,os,sys; p=sys.argv[1]; sys.exit(os.path.exists(p) and json.load(open(p)).get('flags',{}).get('steam_running') is False)" \
+      "$QAHOME/.local/state/rivet/state.json" 2>/dev/null; then touch "$FAKE_STEAM_DIR/steam-running"; fi
   { echo "const SCENARIO = \"$SC\";"; [ -n "${QA_CUT:-}" ] && echo "const QA_CUT = $QA_CUT;"; cat "$DRIVER"; } > "$OUT/driver-$SC.js"
   env $ENVX HOME="$QAHOME" RIVET_STATE_DIR="$QAHOME/.local/state/rivet" WAYLAND_DISPLAY="$WD" GDK_BACKEND=wayland \
+    PATH="$QAHOME/fakebin:$PATH" FAKE_STEAM_DIR="$FAKE_STEAM_DIR" \
     RIVET_APPLY_CMD="python3 $HERE/qa/fake-apply.py" RIVET_FAKE_SCENARIO="$APPLY_SC" \
     RIVET_DOCTOR_CMD="python3 $HERE/qa/fake-doctor.py" RIVET_DOCTOR_SCENARIO="$DOCTOR_SC" \
     RIVET_COLLECT_CMD="python3 $HERE/qa/fake-collect.py" \
     RIVET_QA_JS="$OUT/driver-$SC.js" RIVET_QA_SHOTS="$OUT/shots" RIVET_NO_NOTIFY=1 \
     "$HERE/rivet-updater" --demo > "$LOG" 2>&1 &
   APP=$!
+  if [ "$SC" = steam ]; then
+    # the driver asks for Steam to "start" (or to refuse to quit) with "[QA] steam: want <marker>"
+    ( seen=0
+      while kill -0 $APP 2>/dev/null; do
+        mapfile -t W < <(grep -o '\[QA\] steam: want [a-z-]*' "$LOG" | awk '{print $4}')
+        while [ $seen -lt ${#W[@]} ]; do touch "$FAKE_STEAM_DIR/${W[$seen]}"; seen=$((seen+1)); done
+        sleep 0.2
+      done ) &
+  fi
   if [ "$SC" = second-instance ]; then
     for _ in $(seq 1 20); do sleep 1; grep -q '\[QA\]' "$LOG" && break; done
     t0=$(date +%s%N)
@@ -198,6 +226,14 @@ for SC in $SCENARIOS; do
     echo "$SC: restarts into the installer started by the bridge: $n (want 0: the driver never clicks Restart now)"; [ "$n" = 0 ] || EXTRA=bad
     [ -e "$QAHOME/.local/state/rivet/release-reboot.calls" ] && { echo "$SC: fake-apply --release-reboot was called"; EXTRA=bad; }
     grep -q '\[QA\] release: FAIL' "$LOG" && EXTRA=bad
+  fi
+  if [ "$SC" = steam ]; then
+    n=$(cat "$QAHOME/.local/state/rivet/fake-collect.calls" 2>/dev/null | wc -l)
+    echo "$SC: collector runs: $n (want 0)"; [ "$n" = 0 ] || EXTRA=bad
+    k=$(grep -c '^kill com.valvesoftware.Steam' "$FAKE_STEAM_DIR/flatpak.calls" 2>/dev/null)
+    echo "$SC: flatpak kill calls: $k (want 2)"; [ "$k" = 2 ] || EXTRA=bad
+    grep -q '\[QA\] steam: FAIL' "$LOG" && EXTRA=bad
+    python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('$SC: state.json on disk: steam_running=%s blocked_count=%s checked_at=%s' % (d['flags']['steam_running'], d['flags']['blocked_count'], d['checked_at']))" "$QAHOME/.local/state/rivet/state.json"
   fi
   if [ "$SC" = other-bulk ]; then
     n=$(grep -c "other restart: .*--ha-restart" "$LOG")

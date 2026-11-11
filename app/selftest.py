@@ -1074,6 +1074,114 @@ def run():
     check(len(evs) == len(U.Bridge.FAKE) + 1, "built-in demo stream emits %d events" % len(evs))
     check(evs[-1]["kmod_verified"] is True, "demo run ends verified and reboot-required")
 
+    # ------------------------------------------ Steam-only re-check (2026-11-10)
+    print("\nSteam-only re-check (focus + Quit Steam, qa/fake-flatpak.sh as flatpak, no collector):")
+    fake_dir = os.path.join(TMP, "fake-steam")
+    fbin = os.path.join(TMP, "fakebin")
+    os.makedirs(fbin, exist_ok=True)
+    os.symlink(os.path.join(HERE, "qa", "fake-flatpak.sh"), os.path.join(fbin, "flatpak"))
+    saved_env = {k: os.environ.get(k) for k in ("PATH", "FAKE_STEAM_DIR", "RIVET_STATE_DIR", "RIVET_COLLECT_CMD")}
+    os.environ.update(PATH=fbin + os.pathsep + os.environ.get("PATH", ""), FAKE_STEAM_DIR=fake_dir)
+    os.environ.pop("RIVET_STATE_DIR", None)         # the backend follows the scratch HOME, like the app
+    collect_mark = os.path.join(TMP, "steam-collector-ran")
+    os.environ["RIVET_COLLECT_CMD"] = "%s -c \"open(%r, 'w').close()\"" % (sys.executable, collect_mark)
+    os.makedirs(fake_dir, exist_ok=True)
+    with open(U.SAMPLE, encoding="utf-8") as fh:
+        sample = json.load(fh)                       # Steam running, 3 runtimes blocked
+    U.write_json_atomic(U.STATE_FILE, sample)
+
+    def disk():
+        with open(U.STATE_FILE, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def steam_msgs(msgs):
+        return [m["event"] for m in msgs if m.get("type") == "steam"]
+
+    out = []
+    b = U.Bridge(out.append)
+    check(b.steam_recheck("focus"), "focus: a re-check starts")
+    wait_for(lambda: steam_msgs(out), 5000)
+    d = disk()
+    check(d["flags"]["steam_running"] is False and d["flags"]["blocked_count"] == 0,
+          "Steam gone since the last check: state.json says so (%s)" % {k: d["flags"].get(k) for k in ("steam_running", "blocked_count")})
+    check(d["checked_at"] == sample["checked_at"], "checked_at untouched (still the last full check)")
+    check(any(m.get("type") == "state" and m["state"]["flags"]["steam_running"] is False for m in out),
+          "the new state is pushed to the page")
+    check(not b.steam_recheck("focus"), "a second focus right after is debounced")
+    raw = open(U.STATE_FILE, "rb").read()
+    b._steam_last = -1e9
+    out.clear()
+    b.steam_recheck("focus")
+    wait_for(lambda: steam_msgs(out), 5000)
+    check(open(U.STATE_FILE, "rb").read() == raw and not [m for m in out if m.get("type") == "state"],
+          "nothing changed: no write, no state push")
+    b._steam_last = -1e9
+    b._collect_proc = object()                      # a collector is running
+    check(not b.steam_recheck("focus"), "never next to a running collector")
+    b._collect_proc = None
+    b.applying = True
+    check(not b.steam_recheck("focus"), "never during an apply")
+    b.applying = False
+
+    print("  Steam started since the last check, then Quit Steam:")
+    open(os.path.join(fake_dir, "steam-running"), "w").close()
+    out.clear()
+    b.steam_recheck("focus")
+    wait_for(lambda: steam_msgs(out), 5000)
+    d = disk()
+    rt = [i for g in d["groups"] if g["id"] == "flatpak" for i in g["items"]]
+    check(d["flags"]["steam_running"] is True and d["flags"]["blocked_count"] == 3
+          and all(i["blocked_by"] == "steam_running" and i["badge"] == "blocked" and not i["selected_default"] for i in rt),
+          "banner back, the 3 runtime rows blocked and unticked")
+    out.clear()
+    t0 = time.monotonic()
+    b.handle(json.dumps({"cmd": "quitSteam"}))
+    wait_for(lambda: steam_msgs(out), 9000)
+    dt = time.monotonic() - t0
+    ev = (steam_msgs(out) or [{}])[-1]
+    check(ev.get("reason") == "quit" and ev.get("steam_running") is False and disk()["flags"]["steam_running"] is False,
+          "Quit Steam: kill, wait until gone, unblocked (%.2f s, waited %s ms)" % (dt, ev.get("waited_ms")))
+    check(dt < 3, "Quit Steam answers in well under the old 21 s (%.2f s)" % dt)
+    check(not os.path.exists(collect_mark) and not any(m.get("type") == "state" and m["state"].get("status") == "checking" for m in out),
+          "no collector started, no loading screen")
+    calls = open(os.path.join(fake_dir, "flatpak.calls")).read().splitlines()
+    check("kill com.valvesoftware.Steam" in calls, "flatpak kill com.valvesoftware.Steam was run")
+
+    print("  a Steam that will not quit:")
+    for f in ("steam-running", "steam-stubborn"):
+        open(os.path.join(fake_dir, f), "w").close()
+    b._steam_last = -1e9
+    out.clear()
+    b.steam_recheck("focus")
+    wait_for(lambda: steam_msgs(out), 5000)
+    out.clear()
+    t0 = time.monotonic()
+    b.handle(json.dumps({"cmd": "quitSteam"}))
+    wait_for(lambda: steam_msgs(out), 12000)
+    dt = time.monotonic() - t0
+    ev = (steam_msgs(out) or [{}])[-1]
+    check(ev.get("steam_running") is True and disk()["flags"]["steam_running"] is True and 4.5 < dt < 9,
+          "gives up after ~%d s and says Steam is still running (%.1f s)" % (U.STEAM_QUIT_WAIT_S, dt))
+
+    print("  Quit Steam while a collector runs waits for it:")
+    os.remove(os.path.join(fake_dir, "steam-stubborn"))
+    b._collect_proc = object()
+    out.clear()
+    b.handle(json.dumps({"cmd": "quitSteam"}))
+    wait_for(lambda: b._steam_after, 3000)
+    check(b._steam_after and not steam_msgs(out), "deferred while the collector runs")
+    b._collect_proc = None
+    b._steam_resume()
+    wait_for(lambda: steam_msgs(out), 9000)
+    check(bool(steam_msgs(out)) and steam_msgs(out)[-1].get("steam_running") is False,
+          "runs once the collector is done")
+    os.remove(U.STATE_FILE)
+    for k, v in saved_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
     # -------------------------------------------------------------- garbage
     print("\nrobustness:")
     out = []

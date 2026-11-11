@@ -255,6 +255,8 @@ Rules the backend applies (deterministic, before the model sees anything):
 - `risk = yellow` if requires_reboot, or name matches kernel*, akmod-*, kmod-*, *nvidia*, mesa*, systemd*, glibc, or a Flatpak runtime (org.freedesktop.Platform*, org.gnome.Platform*, *.GL.*, *.Compat.*).
 - else `green`, unless the model argues otherwise (the model may raise, never lower, a color).
 - Flatpak runtime items get `blocked_by: "steam_running"` when `flatpak ps` lists com.valvesoftware.Steam.
+  Every full collect computes it; between collects the Steam-only re-check (below, 2026-11-10)
+  keeps it current. Quit Steam no longer re-runs the collector.
 - kernel + akmod-nvidia pending together → both `badge: "rebuild"|"reboot"`, and `flags.akmod_nvidia_pending = true`.
 - Badge precedence (clarified 2026-09-15), since an item gets exactly one badge:
   `blocked` > the kernel+akmod pairing (`rebuild` for akmod-*/kmod-*, `reboot` for kernel*)
@@ -262,6 +264,40 @@ Rules the backend applies (deterministic, before the model sees anything):
   rebuild/reboot is the actionable fact for it. `flags.security_count` is therefore computed
   from the ADVISORY (type security, or severity critical/important), not from the badge, and
   can legitimately exceed the number of items badged `security`.
+
+### Steam-only re-check (added 2026-11-10)
+
+Why: only the hourly collector asked whether Steam runs, so a Steam quit or started since then
+showed the wrong banner and blocked rows for up to an hour, and Quit Steam re-ran the whole
+collector (dnf, Flatpak, every Other software source: 21 s observed) to learn one fact.
+
+`backend/steam_check.py [--wait-gone S]` asks `flatpak ps` (milliseconds) and re-derives what
+Steam decides through the collector's own `rules.apply_rules`, run on copies of the rows of the
+`dnf` / `flatpak` / `fwupd` groups (the `held` group is never touched). Only a row whose
+`blocked_by` changed takes the copy's `blocked_by`, `badge`, `risk`, `selected_default`, and the
+verdict/reasoning a full collect would give it: the triage cache entry (and its `risk_raise`)
+when `settings.ai_triage` is on, else `triage.deterministic`. No Claude call, no triage run.
+A colour the model raised on any other row stays. `flags.steam_running` and
+`flags.blocked_count` follow; every other flag, `summary`, `checked_at` and `generated_at` stay as
+they were (the header's "checked HH:MM" keeps meaning the last full collect). A changed document
+gains the additive top-level `steam_checked_at` (ISO time) and is written tmp + fsync + rename.
+- No change: no write (and the app pushes nothing).
+- A `checking` stub on disk (a collector is running): nothing is done; the collector writes the
+  truth itself. state.json replaced between the read and the write (same inode, mtime and size
+  are compared just before the rename): nothing is written, theirs stands.
+- `flatpak ps` fails: nothing is changed (the collector reads a failed probe as "not running",
+  which would unblock every runtime).
+- `--wait-gone S` (after Quit Steam): probes every 0.2 s until Steam has left `flatpak ps`, at
+  most S seconds (the app passes 5), then re-derives with the last answer.
+- stdout: one JSON line `{"steam_running": bool|null, "changed": bool, "wrote": bool, "skipped":
+  null|"no-state"|"checking"|"probe-failed"|"raced", "waited_ms": int}`; exit 0.
+
+The app runs it (`python3 <app>/../backend/steam_check.py`, a Gio subprocess, never on the main
+loop) when the window is opened or raised, on every gain of focus (`notify::is-active`) at most
+once per 5 s, and after Quit Steam. Never while a collector it started runs, an apply or held
+trial runs, an Other software run or bulk run is going, or a doctor runs; a Quit Steam that hits
+one of those runs its re-check when it ends. `rivet-apply` still refuses runtime updates while
+Steam is live (the safety net when the re-check is late).
 
 ## Held back (Flatpak refs pinned with `flatpak mask`), added 2026-09-21
 
@@ -789,6 +825,10 @@ with the `desktop-entry` hint set to `xyz.scottnelson.Rivet`, which is what make
 xyz.scottnelson.Rivet.desktop on click (`notify-send --action` implies `--wait`, which a Type=oneshot unit
 must not do, so no action list is sent).
 
+`backend/steam_check.py [--wait-gone SECONDS]` (2026-11-10)
+: The Steam-only re-check (see "Steam-only re-check" under state.json). Not a `rivet-*` command:
+the app runs it from `../backend` next to itself. Exit 0; one JSON line on stdout.
+
 `rivet-apply --ha-restart [TAG]` (2026-11-01 c)
 : Restarts Home Assistant core only when an integration waits for it (HACS `restart_required`,
 or a `restart_pending` row), after `check_config`; waits until it is back and confirms the loaded
@@ -1025,6 +1065,13 @@ evidence under Show details), then **Run the fix** → streamed → Fixed / The 
 Python pushes to JS by evaluating `window.rivet.receive(<json>)` with messages:
 `{"type":"state", "state": <state.json>}`, `{"type":"progress", "event": <apply event>}`,
 `{"type":"settings", "settings": {...}}`, `{"type":"error", "msg"}`.
+`quitSteam` (amended 2026-11-10): `flatpak kill com.valvesoftware.Steam`, then the Steam-only
+re-check with `--wait-gone 5` (see "Steam-only re-check"); no collector run, no `checking` state,
+so the UI stays on the list. Its result reaches the page as a normal `state` push (when state.json
+changed) plus `{"type":"steam","event":{"reason":"quit"|"focus", "steam_running", "changed",
+"wrote", "skipped", "waited_ms", "ms"}}`. The page toasts only `reason: "quit"`: "Steam closed…"
+(`steam_running: false`), "Steam did not quit within N s…" (`true`), or "Could not tell whether
+Steam quit (…)" (`null`). Focus re-checks are silent.
 The app never replaces a `done` event from rivet-apply. Only when the process ends WITHOUT one
 does it synthesize `{"step":"done","status":"fail","synthetic":true, cause, summary, log_path}`
 naming the exit code, the last step reached and its last message (amended 2026-09-21).
