@@ -513,6 +513,10 @@ and 12 other updates sat below the fold.
   is dropped on this screen (the strip says it). No rows anywhere: the hero stays, trimmed
   (smaller ring, one sentence, the kernel line in fine print, no button). The updates view is
   unchanged (it has the summary bar, no hero).
+  2026-11-10: the updates view's header sub-line carries a small re-check icon right after
+  "checked HH:MM" (`button.recheck`, action `check-now`, same as the menu entry and the R key);
+  it is hidden while a check runs. Before this the only ways to re-check from the list were
+  the menu and R.
 - **One-line rows.** `.row.ew-row` = [`.src` tag, This PC only] name, `installed → latest`,
   at most one muted one-line `.ew-hint` (a `warning`, "nothing uses it; consider removing", a
   failed/can't-check reason, a pulled-but-not-restarted note), badge, [secondary button],

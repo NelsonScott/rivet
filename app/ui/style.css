@@ -465,6 +465,9 @@ input{font-family:var(--font)}
 .ew-note .bad{color:var(--red-text);font-weight:700}
 .ew-link{border:none;background:none;padding:0;font:inherit;color:var(--accent-text);font-weight:700;cursor:pointer}
 .ew-link:hover{text-decoration:underline}
+.recheck{border:none;background:none;padding:2px;margin:-2px 0 -2px 1px;border-radius:5px;color:var(--fg-2);cursor:pointer;vertical-align:-3px;line-height:0}
+.recheck svg{width:13px;height:13px;display:block}
+.recheck:hover{color:var(--accent-text);background:color-mix(in srgb,var(--accent-text) 12%,transparent)}
 /* the three places a row can live: sub-heading with a count and the group's bulk button */
 .ew-group{margin-bottom:18px}
 .ew-group:last-child{margin-bottom:0}

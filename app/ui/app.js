@@ -686,7 +686,11 @@
     }
     el.name.textContent = state.view === 'applying' ? 'Updating…' : 'Rivet';
     // Other software's pointer lives here, not as a summary chip: the summary row is full at 1280 px
-    el.sub.innerHTML = esc(sub) + (state.view === 'updates' ? ewPointer() : '');
+    // 2026-11-10: a visible way to re-check, right where the time of the last check is shown
+    // (the menu entry and the R key were the only ones). Hidden while a check is running.
+    const recheck = state.view === 'updates' && !state.checking
+      ? ` <button class="recheck" data-action="check-now" title="Check for updates now (R)" aria-label="Check for updates now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.2"/><path d="M20 4v7h-7"/></svg></button>` : '';
+    el.sub.innerHTML = esc(sub) + recheck + (state.view === 'updates' ? ewPointer() : '');
 
     let html = '';
     if (state.view === 'updates') {
