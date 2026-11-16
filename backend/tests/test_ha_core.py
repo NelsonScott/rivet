@@ -193,7 +193,8 @@ class ModelMayOnlyRaise(unittest.TestCase):
                                     "Read the list before installing.")
 
     def test_a_kept_answer_is_keyed_by_the_prompt_version(self):
-        self.assertEqual(H.key_of({"installed": "2026.10.4", "latest": "2026.11.1"}), f"2026.10.4->2026.11.1#p{H.PROMPT_V}")
+        self.assertEqual(H.key_of({"installed": "2026.10.4", "latest": "2026.11.1"}), f"2026.10.4->2026.11.1#p{H.PROMPT_V}-{H.MODEL}")
+        self.assertEqual(H.MODEL, os.environ.get("RIVET_HA_CORE_MODEL", "opus"))
         self.assertIn("in the order the owner should read them", H.PROMPT)
 
     def test_none_touch_that_names_one_is_a_touch(self):

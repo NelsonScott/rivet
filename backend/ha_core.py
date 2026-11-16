@@ -41,7 +41,9 @@ CACHE_NAME = "ha-core-cache.json"
 GH_RELEASES = os.environ.get("RIVET_HA_RELEASES_API", "https://api.github.com/repos/home-assistant/core/releases/tags/")
 SITE = "https://www.home-assistant.io"
 SITE_OVERRIDE = os.environ.get("RIVET_HA_SITE")          # QA: a fake server instead of the real site
-MODEL = os.environ.get("RIVET_HA_CORE_MODEL", "sonnet")
+# opus since 2026-11-15: one call per Home Assistant version, dozens of breaking changes weighed
+# against a whole install; the judgement is worth more than the seconds.
+MODEL = os.environ.get("RIVET_HA_CORE_MODEL", "opus")
 FETCH_TIMEOUT_S = 15
 NOTES_BUDGET_S = 60
 AI_TIMEOUT_S = 150
@@ -568,7 +570,8 @@ PROMPT_V = 2      # part of the cache key: a kept answer was written by one word
 
 
 def key_of(it: dict) -> str:
-    return f"{it.get('installed')}->{it.get('latest')}#p{PROMPT_V}"
+    """Everything that changes the answer is in the key: the two versions, the prompt, the model."""
+    return f"{it.get('installed')}->{it.get('latest')}#p{PROMPT_V}-{MODEL}"
 
 
 def is_core(it: dict) -> bool:
