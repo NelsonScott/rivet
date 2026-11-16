@@ -19,12 +19,22 @@
   const selected = () => [...window.rivet.state.selected].sort();
   const expect = (what, ok, got) => log((ok ? 'PASS ' : 'FAIL ') + what + (ok ? '' : ' (got: ' + got + ')'));
   const dnfItems = () => ((window.rivet.state.doc.groups.find(g => g.id === 'dnf') || {}).items || []);
-  let stage = 0, wait = 0; const t0 = Date.now();
+  let stage = 0, wait = 0, nbDone = 0; const t0 = Date.now();
   const iv = setInterval(() => {
     if (wait > 0) { wait--; return; }
     if (stage === 0 && q('[data-action="update-now"]:not([disabled])')) {
       log('updates view: ' + sub() + ' default-selected=' + count());
       if (S !== 'ok') { q('[data-action="update-now"]').click(); stage = 1; log('clicked Update now'); return; }
+      if (!nbDone) {
+        // 2026-11-15: a Flatpak build shipped under the same version reads "new build", not "25.08 → 25.08"
+        nbDone = 1;
+        const nb = q('.card[data-group="flatpak"] .newbuild');
+        const ver = nb ? nb.parentElement.textContent.trim() : '';
+        expect('a same-version Flatpak build reads "new build", not an arrow', /^25\.08 · new build$/.test(ver) && /build 3f1c9a7be202 → a41d07c95e6b/.test(nb.title), ver || 'no .newbuild');
+        if (nb) nb.scrollIntoView({ block: 'center' });
+        shot('flatpak-newbuild'); wait = 8; return;
+      }
+      if (nbDone === 1) { nbDone = 2; qa('*').forEach(e => { if (e.scrollTop) e.scrollTop = 0; }); window.scrollTo(0, 0); wait = 2; return; }
       // clusters: fewer rows than packages, the title says so, routine accordion collapsed
       const rows = qa('.card[data-group="dnf"] .row').length, items = dnfItems().length;
       log('dnf: ' + items + ' packages in ' + rows + ' rows, title="' + txt('.group-title') + '"');

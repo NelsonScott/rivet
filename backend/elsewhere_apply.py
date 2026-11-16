@@ -40,6 +40,7 @@ from common import STATE_PATH, now_iso, write_json_atomic
 
 SAFE_NAME = re.compile(r"^[@A-Za-z0-9][@A-Za-z0-9._/:+-]*$")
 RUN_TIMEOUT_S = 1200                 # cargo install compiles; npm/pipx take seconds
+AFTER_UPDATE_TIMEOUT_S = 900         # a follow-up step (know.py after_update): a service drain can take minutes
 HA_POLL_S = float(os.environ.get("RIVET_HA_POLL_S", "3"))
 HA_TIMEOUT_S = float(os.environ.get("RIVET_HA_TIMEOUT_S", "1200"))
 HA_GONE_S = float(os.environ.get("RIVET_HA_GONE_S", "90"))   # unreachable this long mid-install = failed
@@ -158,6 +159,33 @@ def updated_row(it: dict, now: str | None, *, result: str, note: str | None) -> 
 
 
 # --------------------------------------------------------------------------- local run
+def _post_update(em, it: dict, stream) -> str | None:
+    """The follow-up a tool needs once its new version is on disk (a schema migration, a service
+    restart), from `after_update` in the local overrides (know.py); the returned note joins the
+    row and the summary. A failed follow-up never fails the update itself: the new version IS
+    installed. Why this exists: a daemon that refuses to start until its databases are migrated
+    stays down after an unattended update until someone runs the migration by hand."""
+    import know
+    spec = know.AFTER_UPDATE.get(f"{it.get('source')}:{it.get('name')}")
+    if not spec:
+        return None
+    argv = [a.replace("{prefix}", it.get("prefix") or "") for a in spec["argv"]]
+    shown = "$ " + " ".join(E.tilde(a) for a in argv)
+    hint = f" ({spec['hint']})" if spec.get("hint") else ""
+    if os.path.isabs(argv[0]) and not os.path.isfile(argv[0]):
+        return f"Updated, but its follow-up step was not run: {E.tilde(argv[0])} is not there{hint}."
+    em.emit(STEP, "progress", 95, spec.get("label") or f"Running the follow-up step for {it['name']}…", shown)
+    try:
+        timeout = float(spec.get("timeout") or AFTER_UPDATE_TIMEOUT_S)
+    except (TypeError, ValueError):
+        timeout = AFTER_UPDATE_TIMEOUT_S
+    rc, last = stream(argv, em, STEP, timeout=timeout)
+    if rc != 0:
+        why = "timed out and was killed" if rc == 124 else f"exited {rc}"
+        return f"Updated, but its follow-up step {why}" + (f": {last[:160]}" if last else "") + hint + "."
+    return spec.get("ok") or "Its follow-up step ran."
+
+
 def run_local(em, it: dict, *, stream=None, now_fn=None) -> int:
     from rivet_apply import stream_lines
     stream = stream or stream_lines
@@ -197,8 +225,9 @@ def run_local(em, it: dict, *, stream=None, now_fn=None) -> int:
                 summary=f"{it['name']} did not move to {it.get('latest')} ({why}).", cause=why,
                 other={"id": it["id"], "result": "failed", "item": row})
         return 1
-    msg = f"{it['name']} is now {now or it.get('latest')}."
-    row = updated_row(it, now, result="updated", note=None)
+    extra = _post_update(em, it, stream)
+    msg = f"{it['name']} is now {now or it.get('latest')}." + (f" {extra}" if extra else "")
+    row = updated_row(it, now, result="updated", note=extra)
     em.emit(STEP, "ok", 100, msg, None)
     patch_state(row)
     em.done("ok", reboot_required=False, kmod_verified=None, summary=msg,

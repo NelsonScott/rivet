@@ -209,7 +209,7 @@ def collect_all(fixture: dict | None, *, quiet: bool):
 
 # Optional item keys (contract amendment 2026-09-21): written only when set.
 # `release` (2026-11-03): the facts behind the newer-Fedora row (release.py).
-OPTIONAL_ITEM_KEYS = ["op", "scope", "origin", "release"]
+OPTIONAL_ITEM_KEYS = ["op", "scope", "origin", "release", "build"]
 # Group `held` (contract amendment 2026-09-21b): refs pinned with `flatpak mask`.
 HELD_GROUP = ("held", "Held back", "pinned")
 HELD_ITEM_KEYS = ["held", "hold_state", "hold_reason", "held_since", "good_version",

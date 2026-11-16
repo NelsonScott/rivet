@@ -81,6 +81,9 @@ STATEFUL_IMAGES = {"couchdb", "postgres", "redis", "valkey", "mariadb", "mysql",
 STATEFUL_APPS: set[str] = set()          # local overrides only
 # app -> (title, url) of its runbook, the "Open runbook" button (local overrides only)
 RUNBOOKS: dict[str, tuple[str, str]] = {}
+# "<source>:<name>" -> a follow-up command rivet-apply runs after that tool updated (local
+# overrides only): {"argv": [...], "label"?, "ok"?, "hint"?, "timeout"?}
+AFTER_UPDATE: dict[str, dict] = {}
 
 # ---- local overrides (git-ignored) ----------------------------------------------------------
 # What this particular box runs (its own tools, container apps, runbook links) lives in
@@ -88,7 +91,13 @@ RUNBOOKS: dict[str, tuple[str, str]] = {}
 #   {"static":        [["npm", "some-tool", "What it is.", "Who uses it" | null], ...],
 #    "app_names":     {"<container/unit prefix>": "<app name>", ...},
 #    "stateful_apps": ["<prefix>", ...],
-#    "runbooks":      {"<prefix>": ["<title>", "<url>"], ...}}
+#    "runbooks":      {"<prefix>": ["<title>", "<url>"], ...},
+#    "after_update":  {"npm:some-tool": {"argv": ["{prefix}/bin/some-tool", "migrate"],
+#                                        "label": "Migrating…", "ok": "Migrated.",
+#                                        "hint": "run `some-tool migrate` by hand", "timeout": 900}}}
+# after_update is for a tool that needs a step of its own once the new version is on disk (a
+# schema migration, a service restart). argv is run as is, never through a shell; "{prefix}" is
+# the install prefix of the row. Only this file can name one: nothing in state.json or the UI can.
 LOCAL_PATH = Path(os.environ.get("RIVET_KNOW_LOCAL") or Path(__file__).with_name("know.local.json"))
 
 
@@ -100,6 +109,7 @@ def load_local(path=None) -> bool:
     APP_NAMES.clear()
     STATEFUL_APPS.clear()
     RUNBOOKS.clear()
+    AFTER_UPDATE.clear()
     try:
         data = json.loads(Path(path or LOCAL_PATH).read_text())
     except (OSError, ValueError):
@@ -110,6 +120,10 @@ def load_local(path=None) -> bool:
     APP_NAMES.update(data.get("app_names") or {})
     STATEFUL_APPS.update(data.get("stateful_apps") or [])
     RUNBOOKS.update({k: tuple(v) for k, v in (data.get("runbooks") or {}).items()})
+    for key, spec in (data.get("after_update") or {}).items():
+        argv = spec.get("argv") if isinstance(spec, dict) else None
+        if isinstance(argv, list) and argv and all(isinstance(a, str) and a for a in argv):
+            AFTER_UPDATE[str(key)] = spec
     return True
 
 

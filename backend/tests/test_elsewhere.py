@@ -838,6 +838,72 @@ class OtherUpdate(unittest.TestCase):
         row = json.loads(path.read_text())["elsewhere"]["items"][0]
         self.assertEqual((row["status"], row["last_run"]["result"]), ("ok", "failed"))
 
+    def test_a_follow_up_step_from_the_local_overrides_runs_after_the_update(self):
+        """`after_update` in the local overrides: a tool whose new version needs a step of its own
+        (database migrations, a service restart) gets it once the install succeeded. The step
+        failing must NOT fail the update, since the new version is on disk either way; the row's note
+        carries the warning. A tool without an entry gets nothing."""
+        import know
+        prefix = Path(tempfile.mkdtemp(prefix="rivet-au-")) / "pfx"
+        (prefix / "bin").mkdir(parents=True)
+        (prefix / "bin/some-daemon").write_text("#!/bin/sh\n")
+        it = E.decide_action(E.row("npm", "some-daemon", "2026.10.8", "2026.11.3",
+                                   prefix=str(prefix), npm="/fake/npm"))
+        write_state([it])
+        orig, saved = EA.build_argv, dict(know.AFTER_UPDATE)
+        EA.build_argv = lambda it: (["/fake/npm", "i", "-g", "--prefix", str(prefix), it["name"] + "@latest"], None)
+        know.AFTER_UPDATE["npm:some-daemon"] = {"argv": ["{prefix}/bin/some-daemon", "migrate", "--yes"],
+                                                "ok": "Migrated and restarted.", "hint": "run migrate by hand",
+                                                "timeout": 5}
+        calls = []
+        try:
+            em = FakeEm()
+            rc = EA.run_local(em, it, now_fn=lambda it: "2026.11.3",
+                              stream=lambda argv, em, step, timeout: (calls.append((argv, timeout)), (0, ""))[1])
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls[1], ([str(prefix / "bin/some-daemon"), "migrate", "--yes"], 5.0))
+            self.assertEqual((em.last["status"], em.last["other"]["result"]), ("ok", "updated"))
+            self.assertEqual(em.last["other"]["item"]["last_run"]["note"], "Migrated and restarted.")
+            self.assertIn("Migrated and restarted.", em.last["summary"])
+
+            em = FakeEm()
+            rc = EA.run_local(em, it, now_fn=lambda it: "2026.11.3",
+                              stream=lambda argv, em, step, timeout: (1, "boom") if "migrate" in argv else (0, ""))
+            self.assertEqual((rc, em.last["status"]), (0, "ok"))
+            note = em.last["other"]["item"]["last_run"]["note"]
+            self.assertIn("exited 1: boom", note)
+            self.assertIn("run migrate by hand", note)
+
+            (prefix / "bin/some-daemon").unlink()
+            em, ran = FakeEm(), []
+            rc = EA.run_local(em, it, now_fn=lambda it: "2026.11.3",
+                              stream=lambda argv, em, step, timeout: (ran.append(argv), (0, ""))[1])
+            self.assertEqual((rc, len(ran)), (0, 1), "a missing binary is reported, not run")
+            self.assertIn("was not run", em.last["other"]["item"]["last_run"]["note"])
+
+            em = FakeEm()
+            rc = EA.run_local(em, E.decide_action(E.row("npm", "left-pad", "1.0.0", "1.3.0",
+                                                        prefix=str(prefix), npm="/fake/npm")),
+                              stream=lambda argv, em, step, timeout: (0, ""), now_fn=lambda it: "1.3.0")
+            self.assertEqual(rc, 0)
+            self.assertIsNone(em.last["other"]["item"]["last_run"]["note"], "no entry, no follow-up")
+        finally:
+            EA.build_argv = orig
+            know.AFTER_UPDATE.clear()
+            know.AFTER_UPDATE.update(saved)
+
+    def test_after_update_entries_are_read_from_the_local_file_only_when_well_formed(self):
+        import know
+        f = Path(tempfile.mkdtemp(prefix="rivet-know-")) / "know.local.json"
+        f.write_text(json.dumps({"after_update": {"npm:a": {"argv": ["{prefix}/bin/a", "migrate"]},
+                                                  "npm:b": {"argv": "a b"}, "npm:c": {"argv": []},
+                                                  "npm:d": "x", "npm:e": {"argv": ["ok", 3]}}}))
+        try:
+            self.assertTrue(know.load_local(f))
+            self.assertEqual(sorted(know.AFTER_UPDATE), ["npm:a"])
+        finally:
+            know.load_local(BACKEND / "fixtures" / "know-local.json")   # what the top of this file loaded
+
     def test_npm_end_to_end_with_a_fake_npm(self):
         """The real rivet_apply.py, a fake `npm` on disk that 'installs' into a scratch prefix."""
         prefix = Path(tempfile.mkdtemp(prefix="rivet-npm-")) / "pfx"

@@ -84,6 +84,24 @@ def op(kind, ref, size=0):
 
 
 class CollectFlatpakTest(unittest.TestCase):
+    def test_a_new_build_under_the_same_version_says_so(self):
+        """2026-11-15: a publisher shipped a new build of an app without changing its version,
+        and the row read "2.1.6.0 → 2.1.6.0". Flatpak updates are per commit; the item now
+        carries both commits in `build` so the UI can call it a new build. A real version
+        change carries no `build`."""
+        app, other = "app/org.example.Chat/x86_64/stable", "app/org.example.Notes/x86_64/stable"
+        world = {"installed": {"system": [f"{app.split('/', 1)[1]}\t2.1.6.0\t8b5cc665cdc5\tsystem,current\tChat",
+                                          f"{other.split('/', 1)[1]}\t1.14.0\t111111111111\tsystem,current\tNotes"]},
+                 "updates": {"system": [f"{app}\tflathub\t37.2 MB\tChat\t2.1.6.0\t6837c6800795",
+                                        f"{other}\tflathub\t5 MB\tNotes\t1.15.0\t222222222222"]},
+                 "flathub": []}
+        state, _ = collect(world, [])
+        by = {i["ref"]: i for i in fp_items(state)}
+        self.assertEqual((by[app]["from"], by[app]["to"]), ("2.1.6.0", "2.1.6.0"))
+        self.assertEqual(by[app]["build"], {"from": "8b5cc665cdc5", "to": "6837c6800795"})
+        self.assertEqual((by[other]["from"], by[other]["to"]), ("1.14.0", "1.15.0"))
+        self.assertNotIn("build", by[other])
+
     def test_after_the_reboot_flatpak_wants_the_new_runtime(self):
         """This morning exactly: remote-ls empty, libflatpak wants 2 installs + 2 removals."""
         world = {"installed": {"system": OLD}, "flathub": [GL, GL32], "steam": True,

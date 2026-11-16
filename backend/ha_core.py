@@ -311,11 +311,17 @@ For each breaking change decide whether it touches something this Home Assistant
 integration in in_use, or a core feature every install uses (automations, scripts, templates,
 the recorder, the frontend), which is in in_use too. Be concrete and brief.
 
+List touches in the order the owner should read them: first the ones most likely to break
+something in this home or to need action before installing, last the ones that need no action.
+A change that only matters if the owner did something you cannot see from here (hand-written
+YAML, one particular dashboard card, a custom component) ranks below a change that certainly
+applies, and its what_to_do says so ("If you ...").
+
 Reply with ONE JSON object and nothing else, no markdown:
 {{"touches": [{{"change": <number>, "integration": "<a domain from in_use>", "what_changes": "<at most 20 words>", "what_to_do": "<at most 20 words>"}}],
  "untouched": <how many of the breaking changes touch nothing in use>,
  "verdict": "touches" | "none_touch" | "unsure",
- "summary": "<one plain sentence, at most 25 words>"}}
+ "summary": "<one plain sentence, at most 30 words: what this owner should check or change before installing, most important first, or that nothing needs doing first; no counts, no version numbers>"}}
 
 DATA:
 {data}"""
@@ -494,7 +500,8 @@ def judge(installed, latest, notes: dict, used: list[str] | None, *, use_ai: boo
     chk["risk"] = rate(st, notes_ok=True, model_ok=True, partial=chk["partial"],
                        unsure=verdict["verdict"] == "unsure", touches=bool(chk["touches"]))
     if chk["touches"]:
-        chk["line"] = _touch_line(chk["touches"], ai=True)
+        chk["line"] = _touch_line(chk["touches"], ai=True, total=len(changes),
+                                  summary=verdict["summary"] if verdict["verdict"] == "touches" else "")
     elif verdict["verdict"] == "unsure":
         chk["line"] = (f"{len(changes)} breaking change{'s' if len(changes) != 1 else ''}; Claude could not tell "
                        "whether they touch your setup. Read them before installing.")
@@ -513,13 +520,23 @@ def _is_subject(change: dict, domain: str) -> bool:
     return bool(norm(domain)) and norm(domain) in norm(change.get("title"))
 
 
-def _touch_line(touches: list[dict], *, ai: bool) -> str:
+def _touch_line(touches: list[dict], *, ai: bool, total: int = 0, summary: str = "") -> str:
+    """The row's one line. One touch: say what changes. Several (2026-11-15): how many of the
+    breaking changes touch this setup, then the model's own sentence on which to look at first;
+    quoting only the first touch made a nine-touch release read as if it were about one card."""
     names = list(dict.fromkeys(t["integration"] for t in touches))
     who = names[0] if len(names) == 1 else (f"{names[0]} and {names[1]}" if len(names) == 2
                                             else f"{names[0]}, {names[1]} and {len(names) - 2} more")
     if not ai:
         return f"Touches {who}, which you use (its release notes name it). Read them before installing."
-    return f"Touches {who}, which you use: {_lc_first(touches[0]['what_changes'])}; check your config first."
+    n = len({(t["release"], t["title"]) for t in touches})
+    if n == 1:
+        return f"Touches {who}, which you use: {_lc_first(touches[0]['what_changes'])}; check your config first."
+    head = f"{n} of {total} breaking changes touch what you use" if total >= n else f"{n} breaking changes touch what you use"
+    summary = (summary or "").strip()
+    if not summary:
+        return f"{head} ({who}). Read the list before installing."
+    return f"{head}. {summary if summary[-1] in '.!?…' else summary + '.'}"
 
 
 # --------------------------------------------------------------------------- cache + rows
@@ -547,8 +564,11 @@ def save_cache(cache: dict) -> None:
     write_json_atomic(cache_path(), cache)
 
 
+PROMPT_V = 2      # part of the cache key: a kept answer was written by one wording of PROMPT
+
+
 def key_of(it: dict) -> str:
-    return f"{it.get('installed')}->{it.get('latest')}"
+    return f"{it.get('installed')}->{it.get('latest')}#p{PROMPT_V}"
 
 
 def is_core(it: dict) -> bool:

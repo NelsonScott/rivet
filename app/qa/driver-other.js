@@ -643,7 +643,7 @@
       check(it.core_check && it.core_check.status === 'checked', 'the row carries the investigation (status checked by the real backend)');
       check(txt('.badge', r) === 'MONTHLY' && r.querySelector('.badge').classList.contains(none ? 'minor' : 'major'), none ? 'badge MONTHLY in amber (a monthly release is never below yellow)' : 'badge MONTHLY in red (it touches an integration in use)');
       check(none ? /^AI ?4 breaking changes, none touch an integration you use\.$/.test(txt('.ew-hint', r))
-        : /^AI ?Touches MQTT and Automation, which you use: the discovery_prefix option in YAML is removed; check your config first\.$/.test(txt('.ew-hint', r)), 'the one plain line, from the real check');
+        : /^AI ?2 of 4 breaking changes touch what you use\. Canned answer from qa\/fake-claude\.py \(core-touches\)\.$/.test(txt('.ew-hint', r)), 'the one plain line, from the real check');
       check(!!r.querySelector('.ew-hint .ai-tag') && r.querySelector('.ew-hint').classList.contains('bad') === !none, 'tagged AI; red text only when it touches something');
       check(btnText(CORE) === 'Install in HA' && !!r.querySelector('.cb[data-action="ew-tick"]'), 'Install in HA, and a checkbox for Update now');
       check(btnText('ha:update.home_assistant_operating_system_update') === 'Open in HA ↗' && /^Open only/.test(txt('.ew-hint', row('ha:update.home_assistant_operating_system_update'))), 'HA OS stays Open only');

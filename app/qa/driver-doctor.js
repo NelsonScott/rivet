@@ -10,11 +10,19 @@
   const txt = (s) => ((q(s) || {}).textContent || '').replace(/\s+/g, ' ').trim();
   const btns = () => qa('.hero .actions .btn').map(b => b.textContent + (b.disabled ? '(disabled)' : '')).join('|');
   const shot = (name) => window.webkit.messageHandlers.rivet.postMessage(JSON.stringify({ cmd: 'qaShot', name }));
-  let stage = 0, wait = 0, sawWorking = false, sawFixing = false; const t0 = Date.now();
+  let stage = 0, wait = 0, sawWorking = false, sawFixing = false, shotWorking = false; const t0 = Date.now();
   const iv = setInterval(() => {
     if (wait > 0) { wait--; return; }
     if (/looking into it/.test(sub())) sawWorking = true;
     if (/running the fix/.test(sub())) sawFixing = true;
+    if (stage === 2 && !shotWorking && q('.applying-note')) {
+      // 2026-11-15: the look-only pass says so, and that the fix needs a second click
+      shotWorking = true;
+      const note = txt('.applying-note');
+      log((/^Step 1 of 2, looking only: nothing is changed yet\./.test(note) && /nothing runs until you press Run the fix\.$/.test(note) ? 'PASS' : 'FAIL')
+        + ' the working screen says it only looks and that a fix is approved next: "' + note.slice(0, 60) + '…"');
+      shot('doctor-working'); wait = 4; return;
+    }
     if (stage === 0 && q('[data-action="update-now"]:not([disabled])')) {
       q('[data-action="update-now"]').click(); stage = 1; log('clicked Update now');
     } else if (stage === 1 && q('.hero.result') && q('[data-action="fix-it"]')) {

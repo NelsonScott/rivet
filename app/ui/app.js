@@ -1493,7 +1493,7 @@
     let html = `<div class="row ${blocked ? 'blocked' : ''} ${open ? 'open' : ''} ${release ? 'release' : ''}" data-action="expand" data-id="${esc(it.id)}" role="button" aria-expanded="${open}">
       <span class="cb ${on ? 'on' : ''} ${blocked ? 'disabled' : ''}" data-action="toggle-row" data-id="${esc(it.id)}" role="checkbox" aria-checked="${on}" tabindex="0" title="${blocked ? 'Blocked while Steam runs' : release ? 'Include the release upgrade in this run (it runs last)' : 'Include in this run'}"></span>
       <span class="risk ${risk}" title="${esc(label)}"></span>
-      <div class="body"><div class="hd"><span class="name">${esc(it.display_name || it.name)}</span><span class="ver">${esc(it.from)} → ${esc(it.to)}${esc(cve)}</span></div>
+      <div class="body"><div class="hd"><span class="name">${esc(it.display_name || it.name)}</span><span class="ver">${verHtml(it)}${esc(cve)}</span></div>
         <div class="verdict">${esc(it.verdict || '')}</div></div>
       ${badgeHtml({ crit: isCritical(it), risk, badge: it.badge })}
       <span class="size" ${release ? 'title="The exact size is known once the download starts"' : ''}>${release ? '' : fmtBytes(it.size_bytes)}</span>${svgChev}</div>`;
@@ -1505,6 +1505,15 @@
 
   // Release notes + reasoning of an item; for a cluster, those of its worst member (the
   // verdict and reasoning are per cluster in the triage, identical across members).
+  // "1.2 → 1.3", or "2.1.6.0 · new build" when a Flatpak publisher shipped a new build under
+  // the same version (updates are per commit there), which used to read "2.1.6.0 → 2.1.6.0".
+  function verHtml(it) {
+    if (!it.from || it.from !== it.to) return `${esc(it.from)} → ${esc(it.to)}`;
+    const b = it.build || {};
+    const tip = 'Same version, rebuilt by its publisher' + (b.from && b.to ? ` (build ${b.from} → ${b.to})` : '') + '. It is a real download; the app itself may be unchanged.';
+    return `${esc(it.from)} <span class="newbuild" title="${esc(tip)}">· new build</span>`;
+  }
+
   function renderDetails(it, label, cluster) {
     const adv = it.advisory ? it.advisory.id + (it.advisory.severity ? ' · ' + it.advisory.severity : '') : '—';
     const what = cluster
@@ -1512,7 +1521,7 @@
       : `${esc(it.source)}: ${esc(it.ref || it.name)}`;
     return `<div class="expand">
         <div><h4>RELEASE NOTES · EXCERPT</h4><div class="notes">${esc(it.notes_excerpt || 'No notes available.')}</div>
-          <div class="meta"><span>${what}</span><span>advisory: ${esc(adv)}</span>
+          <div class="meta"><span>${what}</span>${!cluster && it.build && it.build.from && it.build.to ? `<span>build: ${esc(it.build.from)} → ${esc(it.build.to)}</span>` : ''}<span>advisory: ${esc(adv)}</span>
           ${it.notes_url ? `<a href="${esc(it.notes_url)}" data-action="open-url" data-url="${esc(it.notes_url)}">full changelog ↗</a>` : ''}</div></div>
         <div><h4>WHY ${esc(label.toUpperCase())}</h4><div class="why"><p>${esc(it.reasoning || '')}</p></div></div>
       </div>`;
@@ -1541,7 +1550,7 @@
     const listOpen = state.openClusters.has(c.id) || (!!q && x.hit.length > 0);   // member list; a filter hit opens it
     const label = riskLabel(rep);
     const n = c.members.length;
-    const ver = info.sameFrom && info.sameTo ? `${esc(rep.from)} → ${esc(rep.to)}`
+    const ver = info.sameFrom && info.sameTo ? verHtml(rep)
       : info.sameTo ? `→ ${esc(rep.to)}` : `${n} versions`;
     const members = sortItems(q ? x.hit : c.members);
     let html = `<div class="row cluster ${info.blocked ? 'blocked' : ''} ${open ? 'open' : ''} ${listOpen ? 'list-open' : ''}" data-action="expand" data-id="${esc(c.id)}" data-members="${n}" role="button" aria-expanded="${open}">
@@ -1568,7 +1577,7 @@
     let html = `<div class="member ${blocked ? 'blocked' : ''} ${open ? 'open' : ''}" data-action="expand" data-id="${esc(it.id)}" role="button" aria-expanded="${open}">
       <span class="cb ${on ? 'on' : ''} ${blocked ? 'disabled' : ''}" data-action="toggle-row" data-id="${esc(it.id)}" role="checkbox" aria-checked="${on}" tabindex="0" title="${blocked ? 'Blocked while Steam runs' : 'Include in this run'}"></span>
       <span class="risk ${risk}" title="${esc(label)}"></span>
-      <span class="name">${esc(it.display_name || it.name)}</span><span class="ver">${esc(it.from)} → ${esc(it.to)}</span>
+      <span class="name">${esc(it.display_name || it.name)}</span><span class="ver">${verHtml(it)}</span>
       <span class="spacer"></span>
       ${badgeHtml({ crit: isCritical(it), risk, badge: it.badge })}
       <span class="size">${fmtBytes(it.size_bytes)}</span>${svgChev}</div>`;
@@ -1826,7 +1835,7 @@
       const title = fixing ? (d.step === 'verify' ? 'Checking that it worked' : 'Running the fix')
         : (d.pct != null && d.pct >= 30 ? 'Claude is looking into it' : 'Collecting evidence');
       const note = fixing ? 'Each step streams below. If a step fails, Rivet stops there and tells you which one.'
-        : 'Claude Code gets read-only tools: it can inspect logs, packages and the journal, but cannot change anything on this pass.';
+        : 'Step 1 of 2, looking only: nothing is changed yet. Claude Code has read-only tools on this pass (logs, packages, the journal). Next you get its diagnosis and, if there is one, a fix to approve; nothing runs until you press Run the fix.';
       const bar = d.pct != null ? `<div class="progress"><i style="width:${Math.max(2, Math.min(100, d.pct))}%"></i></div>` : `<div class="progress indet"><i></i></div>`;
       return `${bar}<div class="applying"><div class="center">
         <div class="steps"><div class="step active"><span class="ic"></span><div><div class="t">${esc(title)}…</div><div class="d">${esc(d.msg || '')}</div></div></div></div>

@@ -178,7 +178,7 @@ def collect_dnf() -> list[dict]:
 
 # ---------------------------------------------------------------- Flatpak
 
-_FP_COLUMNS = "ref,origin,download-size,name,version"
+_FP_COLUMNS = "ref,origin,download-size,name,version,commit"
 
 
 def _flatpak_installed(scope: str) -> dict[str, dict]:
@@ -295,8 +295,8 @@ def collect_flatpak() -> list[dict]:
             if not line.strip():
                 continue
             cols = line.split("\t")
-            cols += [""] * (5 - len(cols))
-            ref, origin, dlsize, disp, version = cols[:5]
+            cols += [""] * (6 - len(cols))
+            ref, origin, dlsize, disp, version, commit = (c.strip() for c in cols[:6])
             if not ref:
                 continue
             # `flatpak list` prints refs without the app/ or runtime/ prefix
@@ -313,6 +313,13 @@ def collect_flatpak() -> list[dict]:
                 held_refs.add(ref)
                 continue
             appid = flatpak_id(ref)
+            # Flatpak updates are per build (commit), not per version: a publisher can ship a new
+            # build under the same version string (a packaging fix, a rebuilt bundled library).
+            # It is a real download, so it is listed, and `build` lets the UI say what it is
+            # instead of "2.1.6.0 → 2.1.6.0".
+            build = None
+            if version and inst.get("version") == version:
+                build = {"from": inst.get("commit", "")[:12] or None, "to": commit[:12] or None}
             items.append(
                 {
                     "id": f"flatpak:{ref}",
@@ -328,6 +335,7 @@ def collect_flatpak() -> list[dict]:
                     "notes_url": None,
                     "_scope": scope,
                     "_origin": origin,
+                    **({"build": build} if build else {}),
                 }
             )
         # pinned refs with nothing newer on the remote, and trials waiting for a verdict

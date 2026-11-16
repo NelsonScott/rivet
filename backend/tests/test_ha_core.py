@@ -175,6 +175,27 @@ class ModelMayOnlyRaise(unittest.TestCase):
         self.assertEqual((c["step"], c["risk"]), ("patch", "red"))
         self.assertEqual(c["line"], "Touches Automation, which you use: labels now target config entities; check your config first.")
 
+    def test_several_touches_lead_with_the_count_and_the_models_own_sentence(self):
+        """2026-11-15: nine touches read as "alert card option color is renamed" because the line
+        quoted the first one. Several touches: the count, then the model's sentence on what to
+        look at first; the touches keep the order the model gave."""
+        two = [{"change": 3, "integration": "automation", "what_changes": "Labels now target config entities",
+                "what_to_do": "Check your labels."},
+               {"change": 1, "integration": "mqtt", "what_changes": "The discovery_prefix option is removed",
+                "what_to_do": "Move it to the UI."}]
+        c = H.judge("2026.10.4", "2026.11.1", NOTES, USED, use_ai=True, ask=answer(
+            verdict="touches", touches=two, summary="Label-targeted automations change first; then move the MQTT prefix"))
+        self.assertEqual(c["line"], "2 of 3 breaking changes touch what you use. "
+                                    "Label-targeted automations change first; then move the MQTT prefix.")
+        self.assertEqual([t["domain"] for t in c["touches"]], ["automation", "mqtt"])
+        c = H.judge("2026.10.4", "2026.11.1", NOTES, USED, use_ai=True, ask=answer(verdict="touches", touches=two, summary=""))
+        self.assertEqual(c["line"], "2 of 3 breaking changes touch what you use (Automation and MQTT). "
+                                    "Read the list before installing.")
+
+    def test_a_kept_answer_is_keyed_by_the_prompt_version(self):
+        self.assertEqual(H.key_of({"installed": "2026.10.4", "latest": "2026.11.1"}), f"2026.10.4->2026.11.1#p{H.PROMPT_V}")
+        self.assertIn("in the order the owner should read them", H.PROMPT)
+
     def test_none_touch_that_names_one_is_a_touch(self):
         v = H.validate({"verdict": "none_touch", "touches": [{"change": 1, "integration": "mqtt"}], "untouched": 2},
                        [{"n": 1}, {"n": 2}, {"n": 3}], USED)
@@ -292,8 +313,8 @@ class Investigate(WithFakeHA):
         c = it["core_check"]
         self.assertEqual((n, c["status"], c["risk"], it["risk"], it["severity"]), (1, "checked", "red", "red", "minor"))
         self.assertTrue(c["ai"] and it["ai"] == ["core_check"])
-        self.assertEqual(c["line"], "Touches MQTT and Automation, which you use: the discovery_prefix option in YAML is "
-                                    "removed; check your config first.")
+        self.assertEqual(c["line"], "2 of 4 breaking changes touch what you use. "
+                                    "Canned answer from qa/fake-claude.py (core-touches).")
         self.assertEqual((c["breaking"], c["untouched"], c["in_use"]), (4, 2, 15))
         self.assertEqual(c["notes_url"], "https://www.home-assistant.io/blog/2026/11/04/release-202611/")
         self.assertTrue(it["confirm"] and it["action"] == "ha_install")
