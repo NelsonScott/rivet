@@ -861,6 +861,16 @@ supervisor and device firmware stay Open only (done by hand in Home Assistant).
   and an in-use domain (else dropped); "none_touch" with a valid touch = "touches"; "touches" with
   none left = "unsure"; anything unreadable = no answer. No breaking change in the notes = nothing to
   ask (`status: "no_breaking"`, not AI).
+- **After the install (2026-11-15, `backend/ha_after.py`).** Before it asks Home Assistant to install,
+  rivet-apply snapshots every entity's state and every integration's load state (two GETs); once Home
+  Assistant is RUNNING on the new version it waits for integrations to settle (`RIVET_HA_SETTLE_S`,
+  default 90 s, sooner when nothing is wrong) and compares. Counted: an entity that worked and is now
+  `unavailable` / `unknown`, an entity that is gone, an integration that went to `setup_error` /
+  `setup_retry` / `migration_error`. Not counted: anything already dead or failing before. The run stays
+  `ok` / `installed` (the new version runs); the sentence joins `summary` and the row's `last_run.note`,
+  and the `done` event carries `other.health = {entities, integrations, dead, gone, failed: [[domain,
+  state, reason]], integrations_gone, integrations_new, problems}` (`{problems: null}` when no snapshot
+  could be taken). Read-only: never a service call.
 - **Row facts.** `core_check = {from, to, step, risk, status: "pending" | "checked" | "no_breaking" |
   "unchecked", line, ai, reason, touches: [{release, title, integration, domain, what_changes,
   what_to_do, by: "model" | "notes"}], breaking, untouched, releases: [{version, url, breaking}],

@@ -394,6 +394,11 @@ class Install(WithFakeHA):
             old = getattr(EA, k)
             setattr(EA, k, v)
             self.addCleanup(setattr, EA, k, old)
+        import ha_after
+        for k, v in (("SETTLE_S", 0.4), ("SETTLE_POLL_S", 0.05)):
+            old = getattr(ha_after, k)
+            setattr(ha_after, k, v)
+            self.addCleanup(setattr, ha_after, k, old)
         self.it = core_row()
         EA.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         EA.STATE_PATH.write_text(json.dumps({"schema": 1, "groups": [], "elsewhere": {
@@ -408,12 +413,35 @@ class Install(WithFakeHA):
         return next(i for i in json.loads(EA.STATE_PATH.read_text())["elsewhere"]["items"] if i["id"] == CORE)
 
 
+class InstallHurts(Install):
+    """2026-11-15: the new version runs, but something that worked before does not. Still "ok"
+    (the install did happen); the summary, the row and other.health say what broke."""
+    story = "hurts"
+
+    def test_the_summary_says_what_stopped_working(self):
+        rc, em = self.install()
+        self.assertEqual((rc, em.last["status"], em.last["other"]["result"]), (0, "ok", "installed"))
+        h = em.last["other"]["health"]
+        self.assertEqual((h["dead"], h["gone"], h["problems"]), (["light.kitchen"], ["switch.fan"], 3))
+        self.assertEqual(h["failed"][0][1:], ["setup_retry", "Host is unreachable"])
+        self.assertIn("something that worked before does not now", em.last["summary"])
+        self.assertIn("1 now unavailable: light.kitchen", em.last["summary"])
+        self.assertNotIn("sensor.always_dead", em.last["summary"], "dead before, dead after: not this update's doing")
+        self.assertIn("light.kitchen", self.row()["last_run"]["note"])
+
+
 class InstallOk(Install):
     def test_goes_away_and_comes_back_on_the_new_version(self):
         rc, em = self.install()
         self.assertEqual(rc, 0, em.last)
         self.assertEqual(em.last["other"]["result"], "installed")
-        self.assertEqual(em.last["summary"], "Home Assistant is now 2026.11.1 and running.")
+        self.assertRegex(em.last["summary"], r"^Home Assistant is now 2026\.11\.1 and running\. Checked after the restart: "
+                                             r"all 5 entities and \d+ integrations that worked before still do\.$")
+        self.assertEqual(em.last["other"]["health"]["problems"], 0)
+        self.assertEqual(self.row()["last_run"]["note"], em.last["summary"].split("running. ", 1)[1])
+        self.assertIn("Home Assistant is back. Checking that what worked before still works…", em.msgs())
+        self.assertEqual([r[1] for r in self.srv.calls("POST")], ["/api/config/core/check_config", "/api/services/update/install"],
+                         "the comparison only reads")
         self.assertIn("Home Assistant is restarting, this is expected. Rivet waits for it (up to 3 s)…", em.msgs())
         self.assertEqual(self.srv.calls("POST", "/api/services/update/install")[0][2],
                          {"entity_id": "update.home_assistant_core_update", "version": "2026.11.1", "backup": True})
@@ -421,6 +449,21 @@ class InstallOk(Install):
         self.assertEqual(posts, ["/api/config/core/check_config", "/api/services/update/install"], "check_config first")
         self.assertEqual((self.row()["status"], self.row()["installed"]), ("updated", "2026.11.1"))
         self.assertFalse(EA.core_lock_path().exists(), "the lock goes with the run")
+
+    def test_the_comparison_is_pure_and_names_what_changed(self):
+        import ha_after as A
+        before = {"states": {"light.a": "on", "light.b": "off", "sensor.dead": "unavailable", "update.x": "off"},
+                  "entries": {"hue|": ["loaded", None], "plex|": ["setup_retry", "down"], "old|": ["loaded", None]}}
+        after = {"states": {"light.a": "unavailable", "sensor.dead": "unavailable", "update.x": "off", "light.new": "unknown"},
+                 "entries": {"hue|": ["setup_error", "boom"], "plex|": ["setup_retry", "down"], "renamed|": ["loaded", None]}}
+        d = A.compare(before, after)
+        self.assertEqual((d["dead"], d["gone"], d["failed"]), (["light.a"], ["light.b"], [["hue", "setup_error", "boom"]]))
+        self.assertEqual((d["integrations_gone"], d["integrations_new"]), (["old"], ["renamed"]))
+        self.assertEqual(A.problems(d), 3, "what was already dead or already failing before is not counted")
+        self.assertEqual(A.line(d), "Checked after the restart, and something that worked before does not now; did not load: "
+                                    "hue (boom); 1 now unavailable: light.a; 1 no longer there: light.b. The other 2 entities "
+                                    "are fine. Integrations changed by the update: gone old; new renamed.")
+        self.assertIn("could not compare", A.line(None))
 
     def test_refused_without_the_confirmation(self):
         em = Em()

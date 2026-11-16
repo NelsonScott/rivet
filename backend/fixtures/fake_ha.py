@@ -175,11 +175,21 @@ class FakeHA:
                                        "safe_mode": False, "recovery_mode": False})
         if path == "/api/config/config_entries/entry":
             doms = sorted({c.split(".")[0] for c in self.components if c not in ("homeassistant", "http", "api")})
-            return self._json(h, 200, [{"entry_id": str(i), "domain": d, "state": "loaded"} for i, d in enumerate(doms)])
+            hurt = self.story == "hurts" and self.version == self.target       # the update broke one integration
+            return self._json(h, 200, [{"entry_id": str(i), "domain": d, "title": "",
+                                        "state": "setup_retry" if hurt and d == doms[0] else "loaded",
+                                        "reason": "Host is unreachable" if hurt and d == doms[0] else None}
+                                       for i, d in enumerate(doms)])
         if path == "/api/states/update.home_assistant_core_update":
             return self._json(h, 200, self.entity())
         if path == "/api/states":
-            return self._json(h, 200, [self.entity(), {"entity_id": "sun.sun", "state": "above_horizon", "attributes": {}}])
+            hurt = self.story == "hurts" and self.version == self.target
+            rows = [self.entity(), {"entity_id": "sun.sun", "state": "above_horizon", "attributes": {}},
+                    {"entity_id": "light.kitchen", "state": "unavailable" if hurt else "on", "attributes": {}},
+                    {"entity_id": "sensor.always_dead", "state": "unavailable", "attributes": {}}]
+            if not hurt:
+                rows.append({"entity_id": "switch.fan", "state": "off", "attributes": {}})
+            return self._json(h, 200, rows)
         if path == "/api/config/core/check_config" and method == "POST":
             if self.story == "invalid":
                 return self._json(h, 200, {"result": "invalid", "errors": "Integration error: mqtt - Integration 'mqtt' not found."})

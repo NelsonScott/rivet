@@ -360,6 +360,8 @@ def _run_core(em, it, ctx, base, auth, eid, target, sleep) -> int:
     if chk.get("result") != "valid":
         return _ha_fail(em, it, "Home Assistant's configuration does not check out "
                         f"({str(chk.get('errors') or chk.get('result'))[:200]}); nothing was installed")
+    import ha_after
+    before = ha_after.snapshot(ctx, base, auth)      # what works now, to compare once it is back
     data = {"entity_id": eid}
     if feats & E.HA_SPECIFIC_VERSION:
         data["version"] = target
@@ -438,7 +440,9 @@ def _run_core(em, it, ctx, base, auth, eid, target, sleep) -> int:
             continue
         running = version or a.get("installed_version")
         if running and not E.is_newer(running, target):
-            return _core_ok(em, it, running, t_start)
+            health = ha_after.settle_and_compare(ctx, base, auth, before, sleep=sleep,
+                                                 emit=lambda m: em.emit(STEP, "progress", 97, m, None))
+            return _core_ok(em, it, running, t_start, health=health, checked=True)
         if saw_down:
             old_back += 1
             if old_back >= 3:
@@ -451,15 +455,26 @@ def _run_core(em, it, ctx, base, auth, eid, target, sleep) -> int:
                             "see Settings › System › Logs" + ("" if not saw_progress else " (it began, then stopped)"))
 
 
-def _core_ok(em, it: dict, version, t_start: float, *, already: bool = False) -> int:
+def _core_ok(em, it: dict, version, t_start: float, *, already: bool = False, health: dict | None = None,
+             checked: bool = False) -> int:
+    """`checked`: a before/after comparison was attempted (ha_after); `health` is its answer, None
+    when Home Assistant would not hand over a snapshot. The install is "ok" either way: the new
+    version runs. What stopped working is said in the summary, the row's note and `other.health`."""
     mins = int((time.monotonic() - t_start) // 60)
     msg = (f"Home Assistant was already on {version}." if already else
            f"Home Assistant is now {version} and running" + (f" ({mins} min)." if mins else "."))
-    row = updated_row(it, str(version), result="installed", note=None)
+    note = None
+    if checked:
+        import ha_after
+        note = ha_after.line(health)
+        msg += " " + note
+    row = updated_row(it, str(version), result="installed", note=note)
     em.emit(STEP, "ok", 100, msg, None)
     patch_state(row)
-    em.done("ok", reboot_required=False, kmod_verified=None, summary=msg,
-            other={"id": it["id"], "result": "installed", "item": row})
+    other = {"id": it["id"], "result": "installed", "item": row}
+    if checked:
+        other["health"] = dict(health, problems=ha_after.problems(health)) if health else {"problems": None}
+    em.done("ok", reboot_required=False, kmod_verified=None, summary=msg, other=other)
     return 0
 
 
